@@ -1,6 +1,6 @@
 // `npx cap add android` で生成された Android プロジェクトを ゲーム向けに調整する
 // - 横画面固定 / マイク権限
-// - 常時音声認識プラグイン（native/android/*.java）と Vosk ライブラリを組み込む
+// - 常時音声認識プラグイン（native/android/*.java：端末内モデル優先、Vosk 予備）を組み込む
 // - 日本語音声モデルを assets/model-ja に同梱（VOSK_MODEL_DIR、既定 .cache/vosk-model-ja）
 // - versionCode を CI の実行番号に合わせる（上書きインストールしやすくするため）
 import { readFileSync, writeFileSync, existsSync, cpSync, mkdirSync, rmSync } from 'node:fs';
@@ -30,7 +30,7 @@ writeFileSync(manifest, xml);
 
 // ネイティブコード
 mkdirSync(javaDir, { recursive: true });
-for (const f of ['MainActivity.java', 'VoskPlugin.java']) cpSync(`native/android/${f}`, `${javaDir}/${f}`);
+for (const f of ['MainActivity.java', 'PikaVoicePlugin.java']) cpSync(`native/android/${f}`, `${javaDir}/${f}`);
 
 // Gradle
 const run = Number(process.env.GITHUB_RUN_NUMBER || 1);

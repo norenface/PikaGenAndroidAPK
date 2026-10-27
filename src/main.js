@@ -46,6 +46,10 @@ const voice = new VoiceListener({
     }
   },
   onSensor: (s) => ui.setSensor(s),
+  onInfo: ({ message, detail }) => {
+    if (message === 'engine') ui.toast(detail === 'device' ? 'こえエンジン：たんまつ（こうせいど）' : 'こえエンジン：Vosk', 3000);
+    if (message === 'downloading') ui.toast('たんまつの にほんご おんせいデータを ダウンロードちゅう。つぎから こうせいどに なるよ', 4500);
+  },
   onError: (kind) =>
     ui.toast(kind === 'denied' ? 'マイクが つかえません（アプリの せっていで マイクを きょかしてね）' : 'こえを きく じゅんびに しっぱいしました', 4000),
 });

@@ -1,15 +1,17 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 // 常時聞き取り。ボタン操作なしでずっとマイクを待ち受ける。
-// - Android アプリ: アプリ内プラグイン Vosk（オフライン認識。1セッションで聞き続けるので「ポン」音が鳴らない）
+// - Android アプリ: アプリ内プラグイン PikaVoice
+//     端末内の大きな音声認識モデル（Android 13+・日本語データあり）を優先し、使えなければ同梱の Vosk に切り替える
 // - ブラウザ: Web Speech API（continuous + 終了時に自動再開）
 // ピカチュウが考えている間は hold() で聞き取りを止め、release() で再開する。
 // onSensor(state): 'listening'（緑）| 'busy'（灰：考え中・準備中）| 'off'（灰：使えない）
-const Vosk = registerPlugin('Vosk');
+const PikaVoice = registerPlugin('PikaVoice');
 
 export class VoiceListener {
-  constructor({ onPhrase, onSensor, onError }) {
+  constructor({ onPhrase, onSensor, onError, onInfo }) {
     this.onPhrase = onPhrase;
+    this.onInfo = onInfo;
     this.onSensor = onSensor;
     this.onError = onError;
     this.native = Capacitor.isNativePlatform();
@@ -37,16 +39,21 @@ export class VoiceListener {
   async start() {
     if (!this.supported) return this.emit();
     if (this.native) {
-      await Vosk.addListener('result', ({ text }) => this.heard(text));
-      await Vosk.addListener('state', ({ state, message }) => {
+      await PikaVoice.addListener('result', ({ text }) => this.heard(text));
+      await PikaVoice.addListener('info', (i) => this.onInfo?.(i));
+      await PikaVoice.addListener('state', ({ state, message, engine }) => {
         if (state === 'loading' || state === 'listening' || state === 'error') this.engine = state;
+        if (state === 'listening' && engine && engine !== this.engineName) {
+          this.engineName = engine;
+          this.onInfo?.({ message: 'engine', detail: engine });
+        }
         if (state === 'error') this.onError?.(message === 'denied' ? 'denied' : 'error');
         this.emit();
       });
       this.engine = 'loading';
       this.emit();
       try {
-        await Vosk.start();
+        await PikaVoice.start();
       } catch (e) {
         this.engine = 'error';
         this.onError?.(String(e?.message ?? e) === 'denied' ? 'denied' : 'error');
@@ -69,14 +76,14 @@ export class VoiceListener {
   hold() {
     if (this.holding) return;
     this.holding = true;
-    if (this.native) Vosk.pause().catch(() => {});
+    if (this.native) PikaVoice.pause().catch(() => {});
     else this.rec?.abort();
     this.emit();
   }
   release() {
     if (!this.holding) return;
     this.holding = false;
-    if (this.native) Vosk.resume().catch(() => {});
+    if (this.native) PikaVoice.resume().catch(() => {});
     else if (this.engine === 'listening') this.webStart();
     this.emit();
   }

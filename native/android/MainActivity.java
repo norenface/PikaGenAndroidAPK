@@ -8,7 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         // アプリ内プラグイン（常時音声認識）を登録
-        registerPlugin(VoskPlugin.class);
+        registerPlugin(PikaVoicePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

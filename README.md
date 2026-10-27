@@ -29,7 +29,12 @@
 PC ブラウザでは WASD・矢印キーで移動、Space/Enter でしらべる。
 
 初回起動時にマイクの許可を求められます。アプリが裏に回るとマイクは自動で止まり、戻ると再開します。
-Android 版はオフライン音声認識（Vosk・日本語モデル同梱）で1つのセッションを聞き続けるため、認識開始時の「ポン」という音は鳴りません。初回起動時はモデルの展開に数秒〜十数秒かかります（センサー灰色）。
+Android 版の音声エンジンは自動で選ばれます（起動時に「こえエンジン：…」と表示）。
+
+| エンジン | 条件 | 特徴 |
+| --- | --- | --- |
+| たんまつ（高精度） | Android 13 以上 + 端末に日本語の音声データあり | 端末内の大きなモデル。長時間セッションで聞き続け、再起動を最小限にする。日本語データが無い場合は自動でダウンロードを依頼し、次回起動から使う |
+| Vosk | 上記が使えない端末 | 同梱のオフラインモデル。1セッションを聞き続けるので「ポン」音は鳴らない。初回はモデル展開に数秒〜十数秒 |
 
 ## マップ構成
 
@@ -67,7 +72,7 @@ vite.config.js                Vite ビルド設定
 index.html
 public/manifest.webmanifest   PWA マニフェスト
 native/android/
-  VoskPlugin.java             常時音声認識プラグイン（オフライン・効果音なし・一時停止対応）
+  PikaVoicePlugin.java        常時音声認識プラグイン（端末内モデル優先・Vosk 予備・考え中は結果を捨てる）
   MainActivity.java           プラグイン登録
 scripts/
   validate-maps.mjs           マップ定義の整合性チェック（CI で実行）
@@ -80,7 +85,7 @@ src/
     ui.js                     HUD / メッセージ / 選択メニュー / フェード
     input.js                  仮想スティック・タップ・キーボード
     audio.js                  鳴き声合成・効果音・BGM シーケンサ
-    voice.js                  常時音声認識と考え中の一時停止（Android は Vosk、ブラウザは Web Speech API）
+    voice.js                  常時音声認識と考え中の一時停止（Android は PikaVoice プラグイン、ブラウザは Web Speech API）
     save.js                   セーブ（localStorage）
     rng.js                    シード付き乱数
   entities/
