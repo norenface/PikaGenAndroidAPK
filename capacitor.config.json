@@ -1,0 +1,8 @@
+{
+  "appId": "com.norenface.pikagen",
+  "appName": "ピカげんき",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#87ceeb"
+  }
+}

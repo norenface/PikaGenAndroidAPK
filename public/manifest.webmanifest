@@ -1,0 +1,9 @@
+{
+  "name": "ピカげんき",
+  "short_name": "ピカげんき",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#87ceeb",
+  "theme_color": "#ffd83a"
+}
