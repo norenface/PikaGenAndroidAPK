@@ -60,6 +60,13 @@ export class UI {
     this.el.action.classList.toggle('hidden', !label);
     if (label) this.el.action.textContent = label;
   }
+  // マイク状態の表示: listening = 聞き取り中 / paused = 停止中 / それ以外 = 非対応（セリフ選択）
+  setVoiceState(st) {
+    const b = this.el.voice;
+    b.classList.toggle('listening', st === 'listening');
+    b.classList.toggle('paused', st === 'paused');
+    b.textContent = st === 'listening' || st === 'paused' ? '🎤' : 'こえ';
+  }
   setBlind(on, hint = '') {
     this.el.blind.classList.toggle('hidden', !on);
     this.el.hint.textContent = hint;

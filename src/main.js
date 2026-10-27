@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import './style.css';
 import { Save } from './core/save.js';
-import { Audio, createVoiceRecognizer } from './core/audio.js';
+import { Audio } from './core/audio.js';
+import { VoiceListener } from './core/voice.js';
 import { UI } from './core/ui.js';
 import { Input } from './core/input.js';
 import { World } from './core/world.js';
@@ -31,18 +32,26 @@ resize();
 // ───────── ボタン ─────────
 ui.el.action.addEventListener('click', () => world.doAction());
 
+// 声: 常時聞き取り。ボタンはマイクのオン/オフ切り替え（非対応端末ではセリフ選択に切り替わる）
 const PHRASES = ['ピカチュウ！', 'いいこだね', 'こっちおいで', 'おやすみ', '10まんボルト！'];
-const recognizer = createVoiceRecognizer((text) => {
-  ui.toast(`「${text}」`);
-  world.pika.hear(text);
+let voiceState = 'paused';
+const voice = new VoiceListener({
+  onPhrase: (text) => {
+    ui.toast(`「${text}」`);
+    world.pika.hear(text);
+  },
+  onState: (st) => {
+    voiceState = st;
+    ui.setVoiceState(st);
+    if (st === 'denied') ui.toast('マイクが つかえません（せっていで きょかしてね）', 3500);
+  },
 });
+ui.setVoiceState(voice.supported ? 'paused' : 'unsupported');
 ui.el.voice.addEventListener('click', async () => {
+  if (voiceState === 'listening' || voiceState === 'paused') return voice.toggle();
   if (ui.blocking) return;
-  const opts = PHRASES.map((p) => ({ label: p, value: p }));
-  if (recognizer) opts.unshift({ label: '🎤 マイクで はなす', value: '__mic' });
-  const v = await ui.choose('ピカチュウに はなしかける', opts);
-  if (v === '__mic') recognizer.start();
-  else if (v) world.pika.hear(v);
+  const v = await ui.choose('ピカチュウに はなしかける', PHRASES.map((p) => ({ label: p, value: p })));
+  if (v) world.pika.hear(v);
 });
 
 ui.el.menu.addEventListener('click', async () => {
@@ -91,6 +100,7 @@ title.querySelector('.start').addEventListener('click', async () => {
   audio.unlock();
   audio.pika('call');
   title.remove();
+  voice.start();
   await world.gimmick?.enter?.();
 });
 document.addEventListener('pointerdown', () => audio.unlock(), { once: true });

@@ -2,7 +2,6 @@
 // - ピカチュウの鳴き声（フォルマント風の合成）
 // - 効果音
 // - マップごとの簡易BGMシーケンサ
-// - マイク音声認識（対応ブラウザのみ。WebView では UI の「こえ」ボタンで代替）
 
 const THEMES = {
   home:    { bpm: 96,  root: 60, scale: [0, 2, 4, 7, 9],     wave: 'triangle', pattern: [0, 2, 4, 2, 3, 4, 2, 1] },
@@ -166,19 +165,4 @@ export class Audio {
       }
     }, 100);
   }
-}
-
-// マイク音声認識（Chrome 等で利用可。Android WebView では未対応のことが多い）
-export function createVoiceRecognizer(onPhrase) {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return null;
-  const rec = new SR();
-  rec.lang = 'ja-JP';
-  rec.interimResults = false;
-  rec.maxAlternatives = 3;
-  rec.onresult = (e) => {
-    const texts = [...e.results[0]].map((a) => a.transcript);
-    onPhrase(texts.join(' '));
-  };
-  return { start: () => { try { rec.start(); } catch { /* 二重起動 */ } } };
 }
