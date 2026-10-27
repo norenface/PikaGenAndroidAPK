@@ -47,6 +47,24 @@ jobs:
           path: dist/
           retention-days: 30
 
+      # 常時音声認識用の日本語モデル（オフライン認識 Vosk）。毎回ダウンロードしないようキャッシュする
+      - name: Cache Japanese speech model
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/vosk-model-ja
+          key: vosk-model-small-ja-0.22
+
+      - name: Download Japanese speech model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .cache
+          curl -fsSL --retry 4 -o .cache/model.zip https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip
+          unzip -q .cache/model.zip -d .cache
+          mv .cache/vosk-model-small-ja-0.22 .cache/vosk-model-ja
+          rm .cache/model.zip
+          ls .cache/vosk-model-ja
+
       - name: Generate Android project (Capacitor)
         run: |
           if [ ! -d android ]; then npx cap add android; fi

@@ -32,27 +32,24 @@ resize();
 // ───────── ボタン ─────────
 ui.el.action.addEventListener('click', () => world.doAction());
 
-// 声: 常時聞き取り。ボタンはマイクのオン/オフ切り替え（非対応端末ではセリフ選択に切り替わる）
-const PHRASES = ['ピカチュウ！', 'いいこだね', 'こっちおいで', 'おやすみ', '10まんボルト！'];
-let voiceState = 'paused';
+// 声: 常時聞き取り（ボタン操作なし）。
+// 聞き取れたらピカチュウが考える → 反応する。その間は聞き取りを止め、センサーが灰色になる。
 const voice = new VoiceListener({
-  onPhrase: (text) => {
+  onPhrase: async (text) => {
+    if (!world.pika.understands(text)) return;
+    voice.hold();
     ui.toast(`「${text}」`);
-    world.pika.hear(text);
+    try {
+      await world.pika.think(text);
+    } finally {
+      voice.release();
+    }
   },
-  onState: (st) => {
-    voiceState = st;
-    ui.setVoiceState(st);
-    if (st === 'denied') ui.toast('マイクが つかえません（せっていで きょかしてね）', 3500);
-  },
+  onSensor: (s) => ui.setSensor(s),
+  onError: (kind) =>
+    ui.toast(kind === 'denied' ? 'マイクが つかえません（アプリの せっていで マイクを きょかしてね）' : 'こえを きく じゅんびに しっぱいしました', 4000),
 });
-ui.setVoiceState(voice.supported ? 'paused' : 'unsupported');
-ui.el.voice.addEventListener('click', async () => {
-  if (voiceState === 'listening' || voiceState === 'paused') return voice.toggle();
-  if (ui.blocking) return;
-  const v = await ui.choose('ピカチュウに はなしかける', PHRASES.map((p) => ({ label: p, value: p })));
-  if (v) world.pika.hear(v);
-});
+ui.setSensor(voice.supported ? 'busy' : 'off');
 
 ui.el.menu.addEventListener('click', async () => {
   if (ui.blocking) return;

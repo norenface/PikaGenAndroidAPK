@@ -22,13 +22,14 @@
 | 画面左側をドラッグ | 移動（仮想スティック） |
 | 右下の黄色いボタン | しらべる / 出口に入る / ミニゲームの操作 |
 | ピカチュウをタッチ | なでる（なかよし度アップ） |
-| 話しかける | **常に聞き取り中**。「ピカチュウ！」「いいこだね」「こっちおいで」「おやすみ」「10まんボルト」などに反応 |
-| 🎤 ボタン | マイクのオン（緑）/ オフ（灰）切り替え。音声認識が使えない端末ではセリフ選択になる |
+| 話しかける | ボタン操作なしで**常に聞き取り中**。「ピカチュウ！」「いいこだね」「こっちおいで」「おやすみ」「10まんボルト」などに反応 |
+| 音声センサー（画面上部） | 緑＝聞き取り中 / 灰＝ピカチュウが考え中・反応中（この間は聞き取らない） |
 | ≡ メニュー | おうちに帰る / ワープ（テスト用・全マップ）/ データ消去 |
 
 PC ブラウザでは WASD・矢印キーで移動、Space/Enter でしらべる。
 
 初回起動時にマイクの許可を求められます。アプリが裏に回るとマイクは自動で止まり、戻ると再開します。
+Android 版はオフライン音声認識（Vosk・日本語モデル同梱）で1つのセッションを聞き続けるため、認識開始時の「ポン」という音は鳴りません。初回起動時はモデルの展開に数秒〜十数秒かかります（センサー灰色）。
 
 ## マップ構成
 
@@ -65,9 +66,12 @@ capacitor.config.json         Capacitor（Web → Android ラッパー）設定
 vite.config.js                Vite ビルド設定
 index.html
 public/manifest.webmanifest   PWA マニフェスト
+native/android/
+  VoskPlugin.java             常時音声認識プラグイン（オフライン・効果音なし・一時停止対応）
+  MainActivity.java           プラグイン登録
 scripts/
   validate-maps.mjs           マップ定義の整合性チェック（CI で実行）
-  prepare-android.mjs         生成された Android プロジェクトを横画面固定などに調整
+  prepare-android.mjs         生成された Android プロジェクトに横画面固定・マイク権限・音声プラグイン・音声モデルを組み込む
 src/
   main.js                     起動・ループ・ボタン・タイトル画面
   style.css                   UI スタイル
@@ -76,7 +80,7 @@ src/
     ui.js                     HUD / メッセージ / 選択メニュー / フェード
     input.js                  仮想スティック・タップ・キーボード
     audio.js                  鳴き声合成・効果音・BGM シーケンサ
-    voice.js                  常時音声認識（Android はネイティブ、ブラウザは Web Speech API）
+    voice.js                  常時音声認識と考え中の一時停止（Android は Vosk、ブラウザは Web Speech API）
     save.js                   セーブ（localStorage）
     rng.js                    シード付き乱数
   entities/
@@ -93,8 +97,9 @@ src/
 1. Node 22 / Java 21 / Android SDK をセットアップ
 2. `npm ci` → `npm run validate`（マップ定義チェック）→ `npm run build`（Vite）
 3. `dist/` を `pikagen-web` として保存
-4. `npx cap add android` で Android プロジェクトを生成 → `scripts/prepare-android.mjs` で調整 → `npx cap sync`
-5. `./gradlew assembleDebug` でデバッグ APK を作成し `pikagen-apk` として保存
+4. 日本語音声モデル（vosk-model-small-ja-0.22）をダウンロード（キャッシュあり）
+5. `npx cap add android` で Android プロジェクトを生成 → `scripts/prepare-android.mjs` で調整 → `npx cap sync`
+6. `./gradlew assembleDebug` でデバッグ APK を作成し `pikagen-apk` として保存
 
 `android/` フォルダは毎回 CI で生成するのでリポジトリには含めていません。
 

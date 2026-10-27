@@ -1,84 +1,91 @@
-import { Capacitor } from '@capacitor/core';
-import { SpeechRecognition as NativeSR } from '@capacitor-community/speech-recognition';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
-// 常時聞き取り。認識が終わるたびに自動で再開し、ずっとマイクを待ち受ける。
-// - Android アプリ: ネイティブの SpeechRecognizer（プラグイン経由。WebView には音声認識APIがないため）
-// - ブラウザ: Web Speech API（continuous モード + 終了時に再開）
-// onState: 'listening' | 'paused' | 'unsupported' | 'denied'
+// 常時聞き取り。ボタン操作なしでずっとマイクを待ち受ける。
+// - Android アプリ: アプリ内プラグイン Vosk（オフライン認識。1セッションで聞き続けるので「ポン」音が鳴らない）
+// - ブラウザ: Web Speech API（continuous + 終了時に自動再開）
+// ピカチュウが考えている間は hold() で聞き取りを止め、release() で再開する。
+// onSensor(state): 'listening'（緑）| 'busy'（灰：考え中・準備中）| 'off'（灰：使えない）
+const Vosk = registerPlugin('Vosk');
+
 export class VoiceListener {
-  constructor({ onPhrase, onState }) {
+  constructor({ onPhrase, onSensor, onError }) {
     this.onPhrase = onPhrase;
-    this.onState = onState;
-    this.enabled = false;
-    this.running = false;
+    this.onSensor = onSensor;
+    this.onError = onError;
     this.native = Capacitor.isNativePlatform();
     this.WebSR = window.SpeechRecognition || window.webkitSpeechRecognition;
     this.supported = this.native || !!this.WebSR;
+    this.engine = 'idle'; // idle | loading | listening | error
+    this.holding = false;
 
-    // アプリが裏に回ったらマイクを止め、戻ったら再開する
     document.addEventListener('visibilitychange', () => {
-      if (!this.enabled) return;
-      if (document.hidden) this.halt();
-      else this.run();
+      if (this.native || this.engine !== 'listening') return;
+      // ブラウザ版: 裏に回ったら止め、戻ったら再開（アプリ版はネイティブ側で処理）
+      if (document.hidden) this.rec?.abort();
+      else if (!this.holding) this.webStart();
     });
   }
 
+  get sensor() {
+    if (!this.supported || this.engine === 'error') return 'off';
+    return this.engine === 'listening' && !this.holding ? 'listening' : 'busy';
+  }
+  emit() {
+    this.onSensor(this.sensor);
+  }
+
   async start() {
-    if (!this.supported) return this.onState('unsupported');
+    if (!this.supported) return this.emit();
     if (this.native) {
+      await Vosk.addListener('result', ({ text }) => this.heard(text));
+      await Vosk.addListener('state', ({ state, message }) => {
+        if (state === 'loading' || state === 'listening' || state === 'error') this.engine = state;
+        if (state === 'error') this.onError?.(message === 'denied' ? 'denied' : 'error');
+        this.emit();
+      });
+      this.engine = 'loading';
+      this.emit();
       try {
-        const { available } = await NativeSR.available();
-        if (!available) return this.onState('unsupported');
-        let perm = await NativeSR.checkPermissions();
-        if (perm.speechRecognition !== 'granted') perm = await NativeSR.requestPermissions();
-        if (perm.speechRecognition !== 'granted') return this.onState('denied');
-      } catch {
-        return this.onState('unsupported');
+        await Vosk.start();
+      } catch (e) {
+        this.engine = 'error';
+        this.onError?.(String(e?.message ?? e) === 'denied' ? 'denied' : 'error');
+        this.emit();
       }
+      return;
     }
-    this.enabled = true;
-    this.run();
+    this.engine = 'listening';
+    this.webStart();
+    this.emit();
   }
 
-  pause() {
-    this.enabled = false;
-    this.halt();
-    this.onState('paused');
+  heard(text) {
+    const t = text.replace(/\s+/g, '');
+    if (!t || this.holding) return;
+    this.onPhrase(t);
   }
 
-  toggle() {
-    if (this.enabled) this.pause();
-    else this.start();
-  }
-
-  run() {
-    if (this.running || !this.enabled || document.hidden) return;
-    this.running = true;
-    this.onState('listening');
-    if (this.native) this.nativeLoop();
-    else this.webLoop();
-  }
-
-  halt() {
-    this.running = false;
-    if (this.native) NativeSR.stop().catch(() => {});
+  // ピカチュウが考え中: 聞き取り停止（センサー灰色）
+  hold() {
+    if (this.holding) return;
+    this.holding = true;
+    if (this.native) Vosk.pause().catch(() => {});
     else this.rec?.abort();
+    this.emit();
+  }
+  release() {
+    if (!this.holding) return;
+    this.holding = false;
+    if (this.native) Vosk.resume().catch(() => {});
+    else if (this.engine === 'listening') this.webStart();
+    this.emit();
   }
 
-  async nativeLoop() {
-    while (this.running) {
-      try {
-        // partialResults:false なら 1回の発話が終わると matches で返ってくる
-        const res = await NativeSR.start({ language: 'ja-JP', maxResults: 3, popup: false, partialResults: false });
-        if (res?.matches?.length) this.onPhrase(res.matches.join(' '));
-      } catch {
-        // 無音タイムアウト・聞き取れなかった等。すぐに待ち受けを再開する
-      }
-      await new Promise((r) => setTimeout(r, 250));
+  webStart() {
+    if (this.rec) {
+      this.rec.onend = null;
+      this.rec.abort();
     }
-  }
-
-  webLoop() {
     const rec = (this.rec = new this.WebSR());
     rec.lang = 'ja-JP';
     rec.continuous = true;
@@ -86,17 +93,18 @@ export class VoiceListener {
     rec.maxAlternatives = 3;
     rec.onresult = (e) => {
       const r = e.results[e.results.length - 1];
-      if (r.isFinal) this.onPhrase([...r].map((a) => a.transcript).join(' '));
+      if (r.isFinal) this.heard([...r].map((a) => a.transcript).join(' '));
     };
     rec.onerror = (e) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        this.enabled = this.running = false;
-        this.onState('denied');
+        this.engine = 'error';
+        this.onError?.('denied');
+        this.emit();
       }
     };
-    // ブラウザは一定時間で自動終了するので、そのたびに再開する
+    // ブラウザは一定時間で自動終了するので、聞き取り可能な間は再開し続ける
     rec.onend = () => {
-      if (this.running) setTimeout(() => this.running && rec.start(), 250);
+      if (this.engine === 'listening' && !this.holding && !document.hidden && this.rec === rec) setTimeout(() => this.rec === rec && rec.start(), 200);
     };
     try {
       rec.start();

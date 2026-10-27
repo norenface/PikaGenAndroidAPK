@@ -6,6 +6,7 @@ export class UI {
       <div class="hud">
         <div class="mapname"></div>
         <div class="heart" title="なかよし度"><span>♥</span><b class="fr">0</b></div>
+        <div class="sensor busy"><i></i><span></span></div>
         <div class="timer hidden"></div>
         <div class="spacer"></div>
         <button class="hbtn mute">♪</button>
@@ -13,7 +14,6 @@ export class UI {
       </div>
       <div class="joy"><div class="knob"></div></div>
       <div class="pad">
-        <button class="btn voice">こえ</button>
         <button class="btn action hidden">しらべる</button>
       </div>
       <div class="blind hidden"><div class="hint"></div></div>
@@ -25,7 +25,7 @@ export class UI {
     const q = (s) => root.querySelector(s);
     this.el = {
       mapname: q('.mapname'), fr: q('.fr'), timer: q('.timer'), mute: q('.mute'), menu: q('.menu'),
-      joy: q('.joy'), voice: q('.voice'), action: q('.action'), blind: q('.blind'), hint: q('.blind .hint'),
+      joy: q('.joy'), sensor: q('.sensor'), sensorText: q('.sensor span'), action: q('.action'), blind: q('.blind'), hint: q('.blind .hint'),
       msg: q('.msg'), who: q('.msg .who'), text: q('.msg .text'),
       modal: q('.modal'), mtitle: q('.modal .title'), mlist: q('.modal .list'),
       toast: q('.toast'), fade: q('.fade'),
@@ -33,7 +33,7 @@ export class UI {
     this.busy = 0;
     this.msgResolve = null;
     this.el.msg.addEventListener('pointerup', () => this.advance());
-    for (const b of [this.el.mute, this.el.menu, this.el.voice, this.el.action]) {
+    for (const b of [this.el.mute, this.el.menu, this.el.action]) {
       b.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
     this.el.mute.addEventListener('click', () => {
@@ -60,12 +60,13 @@ export class UI {
     this.el.action.classList.toggle('hidden', !label);
     if (label) this.el.action.textContent = label;
   }
-  // マイク状態の表示: listening = 聞き取り中 / paused = 停止中 / それ以外 = 非対応（セリフ選択）
-  setVoiceState(st) {
-    const b = this.el.voice;
-    b.classList.toggle('listening', st === 'listening');
-    b.classList.toggle('paused', st === 'paused');
-    b.textContent = st === 'listening' || st === 'paused' ? '🎤' : 'こえ';
+  // 音声センサー: listening = 緑（聞き取り中）/ busy = 灰（ピカチュウ考え中・準備中）/ off = 灰（マイク使用不可）
+  setSensor(st) {
+    const el = this.el.sensor;
+    el.classList.toggle('listening', st === 'listening');
+    el.classList.toggle('busy', st === 'busy');
+    el.classList.toggle('off', st === 'off');
+    this.el.sensorText.textContent = { listening: 'きいてるよ', busy: 'かんがえちゅう', off: 'マイク ✕' }[st];
   }
   setBlind(on, hint = '') {
     this.el.blind.classList.toggle('hidden', !on);
