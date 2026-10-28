@@ -10,6 +10,7 @@
     "preview": "vite preview --host",
     "validate": "node scripts/validate-maps.mjs",
     "maps:build": "node scripts/export-maps-json.mjs && python3 tools/blender/build_maps.py",
+    "pikachu:build": "python3 tools/blender/build_pikachu.py",
     "android:prepare": "node scripts/prepare-android.mjs"
   },
   "dependencies": {

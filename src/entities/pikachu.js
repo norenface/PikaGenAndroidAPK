@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makePikachu } from './models.js';
+import { makePikachu, blobShadow } from './models.js';
 
 // ピカチュウのAI: ついてくる / うろうろ / よばれたら走ってくる / ギミックからの移動指示
 export class Pikachu {
@@ -15,6 +15,22 @@ export class Pikachu {
     this.wander = null;
     this.wanderT = 2;
     this.walking = false;
+    this.unit = 1;
+  }
+
+  // Blender で作ったモデル（public/models/pikachu.glb）に差し替える。読めなければ簡易モデルのまま
+  useModel(model) {
+    const g = this.obj;
+    g.clear();
+    const rig = new THREE.Group();
+    rig.add(model);
+    g.add(rig, blobShadow(0.3));
+    g.scale.setScalar(1);
+    this.unit = 0.48; // 簡易モデルは 0.48 倍表示だったので、ジャンプなどの移動量をそろえる
+    const get = (n) => model.getObjectByName(n);
+    const parts = { head: get('head'), ears: [get('earL'), get('earR')], tail: get('tail'), arms: [get('armL'), get('armR')] };
+    for (const o of [parts.head, parts.tail, ...parts.ears, ...parts.arms]) o.userData.base = o.rotation.clone();
+    g.userData = { rig, ...parts };
   }
 
   get pos() {
@@ -175,26 +191,35 @@ export class Pikachu {
     w.resolve(this.pos, 0.35);
 
     // アニメーション
-    const { rig, ears, tail, head } = this.obj.userData;
+    const { rig, ears, tail, head, arms } = this.obj.userData;
     let y = this.walking ? Math.abs(Math.sin(this.t * 14)) * 0.12 : 0;
     if (this.jumpT > 0) {
       this.jumpT -= dt;
       y += Math.sin(Math.PI * (1 - Math.max(0, this.jumpT) / this.jumpDur)) * 0.9;
     }
-    rig.position.y = y;
+    rig.position.y = y * this.unit;
     if (this.spinT > 0) {
       this.spinT -= dt;
       rig.rotation.y = (1 - Math.max(0, this.spinT)) * Math.PI * 2;
     } else rig.rotation.y = 0;
     rig.rotation.x = this.sleeping ? 0.2 : 0;
     rig.scale.y = this.sleeping ? 0.85 + Math.sin(this.t * 2) * 0.03 : 1;
-    head.rotation.z = this.thinking ? 0.35 : Math.sin(this.t * 1.7) * 0.08;
-    ears.forEach((e, i) => (e.rotation.x = Math.sin(this.t * 3 + i) * 0.12));
-    tail.rotation.z = Math.sin(this.t * (this.walking ? 12 : 4)) * 0.25;
+    // パーツの基本の向き（モデルのポーズ）に揺れを足す
+    const rot = (o, axis, v) => (o.rotation[axis] = (o.userData.base?.[axis] ?? 0) + v);
+    rot(head, 'z', this.thinking ? 0.35 : Math.sin(this.t * 1.7) * 0.08);
+    ears.forEach((e, i) => rot(e, 'x', Math.sin(this.t * 3 + i) * 0.12));
+    rot(tail, arms ? 'y' : 'z', Math.sin(this.t * (this.walking ? 12 : 4)) * 0.25);
+    // 腕: 歩くと前後にふり、ジャンプ・回転のときはバンザイ
+    const cheer = this.jumpT > 0 || this.spinT > 0;
+    arms?.forEach((a, i) => {
+      rot(a, 'x', !cheer && this.walking ? Math.sin(this.t * 14 + i * Math.PI) * 0.5 : 0);
+      rot(a, 'z', cheer ? (i === 0 ? 1 : -1) * ARM_UP : 0);
+    });
     if (this.sleeping && Math.random() < dt * 0.6) this.emote('Z', '#4a7bd0');
   }
 }
 
+const ARM_UP = 1.3; // ジャンプ時に腕を横へ上げる角度
 const WORDS = [
   /ぴか|びか|ぴっか|pika/i,
   /いいこ|いい子|良い子|かわい|可愛|すき|好き|えらい|偉い/,

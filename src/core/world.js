@@ -28,6 +28,11 @@ export class World {
     this.player.visible = false;
     this.pika = new Pikachu(this);
     this.scene.add(this.player, this.pika.obj);
+    // Blender で作ったピカチュウに差し替え（失敗したら簡易モデルのまま）
+    this.loader
+      .loadAsync('./models/pikachu.glb')
+      .then((g) => this.pika.useModel(toLambert(g.scene)))
+      .catch((e) => console.warn('pikachu model not found, using primitives:', e?.message));
 
     this.root = null;
     this.map = null;
@@ -70,19 +75,7 @@ export class World {
         this.loader.loadAsync(`./maps/${mapId}.glb`),
         fetch(`./maps/${mapId}.json`).then((r) => r.json()),
       ]);
-      gltf.scene.traverse((o) => {
-        if (!o.isMesh) return;
-        // スマホ向けに PBR → Lambert に置き換え（見た目はフラットなローポリ）
-        const m = o.material;
-        const water = /^(water|sea)/.test(m.name);
-        o.material = new THREE.MeshLambertMaterial({
-          color: m.color,
-          vertexColors: !!o.geometry.attributes.color,
-          emissive: m.emissive,
-          transparent: water,
-          opacity: water ? 0.85 : 1,
-        });
-      });
+      toLambert(gltf.scene);
       env = { scene: gltf.scene, colliders: meta.colliders ?? [] };
     } catch (e) {
       console.warn('map model not found, using primitives:', mapId, e?.message);
@@ -479,6 +472,23 @@ export class World {
     this.camera.rotation.set(this.pitch, this.player.rotation.y + Math.PI, 0);
     this.sky.group.position.set(p.x, 0, p.z);
   }
+}
+
+// スマホ向けに glTF の PBR マテリアルを Lambert に置き換える（水・海は半透明）
+function toLambert(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    const water = /^(water|sea)/.test(m.name);
+    o.material = new THREE.MeshLambertMaterial({
+      color: m.color,
+      vertexColors: !!o.geometry.attributes.color,
+      emissive: m.emissive,
+      transparent: water,
+      opacity: water ? 0.85 : 1,
+    });
+  });
+  return root;
 }
 
 // 空: グラデーションのドーム + 雲（昼）/ 星（夜）。カメラと一緒に動く

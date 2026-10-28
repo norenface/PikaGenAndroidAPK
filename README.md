@@ -76,7 +76,9 @@ index.html
 public/manifest.webmanifest   PWA マニフェスト
 public/maps/<id>.glb          Blender で生成した各マップの3Dモデル
 public/maps/<id>.json         そのマップの当たり判定（木・岩など [x, z, 半径]）
+public/models/pikachu.glb     Blender で作ったピカチュウ（頭・耳・腕・しっぽが別パーツ）
 tools/blender/build_maps.py   全マップを生成する Blender スクリプト
+tools/blender/build_pikachu.py ピカチュウのモデルを生成する Blender スクリプト
 native/android/
   PikaVoicePlugin.java        常時音声認識プラグイン（端末内モデル優先・Vosk 予備・考え中は結果を捨てる）
   MainActivity.java           プラグイン登録
@@ -125,10 +127,13 @@ src/
 pip install bpy            # Blender の Python モジュール（または Blender 本体）
 npm run maps:build         # data.js → JSON → public/maps/*.glb を全部作り直す
 npm run maps:build -- tokiwa garden   # 一部だけ
+npm run pikachu:build      # ピカチュウのモデルを作り直す
 ```
 
 `.glb` は Blender の「ファイル → インポート → glTF」で開いて手直しもできます（手直しした場合は glb で書き出して上書き）。
-`.glb` が無いマップは、従来の簡易な図形で表示されます。
+`.glb` が無いマップやピカチュウは、従来の簡易な図形で表示されます。
+
+ピカチュウのモデルは頭・耳・腕・足・しっぽが名前付きの別パーツになっていて、ゲーム側で耳ぴくぴく・しっぽふりふり・考え中の首かしげ・歩くときの腕ふり・ジャンプでバンザイなどを動かしています。
 
 ## 拡張のしかた
 
