@@ -19,14 +19,17 @@
 
 | 操作 | 内容 |
 | --- | --- |
-| 画面左側をドラッグ | 移動（仮想スティック） |
+| 画面左側をドラッグ | 歩く（仮想スティック。上で前進、左右で横歩き） |
+| 画面右側をドラッグ | 見回す（一人称視点） |
 | 右下の黄色いボタン | しらべる / 出口に入る / ミニゲームの操作 |
 | ピカチュウをタッチ | なでる（なかよし度アップ） |
 | 話しかける | ボタン操作なしで**常に聞き取り中**。「ピカチュウ！」「いいこだね」「こっちおいで」「おやすみ」「10まんボルト」などに反応 |
 | 音声センサー（画面上部） | 緑＝聞き取り中 / 灰＝ピカチュウが考え中・反応中（この間は聞き取らない） |
 | ≡ メニュー | おうちに帰る / ワープ（テスト用・全マップ）/ データ消去 |
 
-PC ブラウザでは WASD・矢印キーで移動、Space/Enter でしらべる。
+PC ブラウザでは W/S/↑/↓ で前後、A/D で横歩き、←/→（Q/E）で向きを変える、マウスドラッグで見回す、Space/Enter でしらべる。
+
+視点は一人称（目の高さ 1.55m）。ピカチュウは視界に入るよう、少し前の右側をついてきます。
 
 初回起動時にマイクの許可を求められます。アプリが裏に回るとマイクは自動で止まり、戻ると再開します。
 Android 版の音声エンジンは自動で選ばれます（起動時に「こえエンジン：…」と表示）。
@@ -71,6 +74,9 @@ capacitor.config.json         Capacitor（Web → Android ラッパー）設定
 vite.config.js                Vite ビルド設定
 index.html
 public/manifest.webmanifest   PWA マニフェスト
+public/maps/<id>.glb          Blender で生成した各マップの3Dモデル
+public/maps/<id>.json         そのマップの当たり判定（木・岩など [x, z, 半径]）
+tools/blender/build_maps.py   全マップを生成する Blender スクリプト
 native/android/
   PikaVoicePlugin.java        常時音声認識プラグイン（端末内モデル優先・Vosk 予備・考え中は結果を捨てる）
   MainActivity.java           プラグイン登録
@@ -107,6 +113,22 @@ src/
 6. `./gradlew assembleDebug` でデバッグ APK を作成し `pikagen-apk` として保存
 
 `android/` フォルダは毎回 CI で生成するのでリポジトリには含めていません。
+
+## 3Dマップ（Blender）
+
+全13マップの地形・木々・建物・水辺などは `tools/blender/build_maps.py` で Blender から生成しています（オリジナルデザイン）。
+歩ける範囲（`src/maps/data.js` の `size`）は平らで、外側は丘・山・海などで囲んでいます。キャラクターやギミックの物はゲームのコードが配置します。
+
+作り直すとき（PC で）:
+
+```bash
+pip install bpy            # Blender の Python モジュール（または Blender 本体）
+npm run maps:build         # data.js → JSON → public/maps/*.glb を全部作り直す
+npm run maps:build -- tokiwa garden   # 一部だけ
+```
+
+`.glb` は Blender の「ファイル → インポート → glTF」で開いて手直しもできます（手直しした場合は glb で書き出して上書き）。
+`.glb` が無いマップは、従来の簡易な図形で表示されます。
 
 ## 拡張のしかた
 

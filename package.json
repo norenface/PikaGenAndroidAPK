@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "validate": "node scripts/validate-maps.mjs",
+    "maps:build": "node scripts/export-maps-json.mjs && python3 tools/blender/build_maps.py",
     "android:prepare": "node scripts/prepare-android.mjs"
   },
   "dependencies": {

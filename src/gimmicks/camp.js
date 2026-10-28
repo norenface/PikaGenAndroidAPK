@@ -18,7 +18,9 @@ export default function camp(w, map) {
     if (done) return;
     done = true;
     w.lockMove = true;
-    w.player.position.set(P.fire[0] + 1.5, 0, P.fire[1] + 2);
+    w.player.position.set(P.fire[0] + 1.5, 0, P.fire[1] + 3);
+    w.faceTo(P.fire[0], P.fire[1]);
+    w.pitch = -0.2;
     w.pika.goTo(P.fire[0] - 0.5, P.fire[1] + 2.2);
     await w.ui.say(
       ['ようこそ キャンプじょうへ！ こんやは とくべつな よるじゃ。', 'たきびを かこんで、ポケモンたちの むかしばなしを しよう……'],

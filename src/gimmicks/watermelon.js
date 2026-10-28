@@ -34,7 +34,12 @@ export default function watermelon(w, map) {
     const dx = sx - p.x;
     const dz = sz - p.z;
     const d = Math.hypot(dx, dz);
-    const dir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'みぎ →' : '← ひだり') : dz < 0 ? '↑ まえ' : '↓ うしろ';
+    // 一人称なので、いま向いている方向から見た前後左右で教える
+    const f = w.forward;
+    const r = w.right;
+    const ahead = dx * f.x + dz * f.z;
+    const side = dx * r.x + dz * r.z;
+    const dir = Math.abs(side) > Math.abs(ahead) ? (side > 0 ? 'みぎ →' : '← ひだり') : ahead > 0 ? '↑ まえ' : '↓ うしろ';
     const heat = d < 1.2 ? 'ピカピカ！！ ここ！' : d < 3 ? 'ピカッ！ ちかい！' : d < 6 ? 'ピカ… ' : 'ピ……　とおい';
     w.ui.setBlind(true, `${heat}　${d < 1.2 ? '' : dir}`);
     for (let i = 0; i < (d < 1.2 ? 3 : d < 3 ? 2 : 1); i++) setTimeout(() => w.audio.pika('hint'), i * 120);

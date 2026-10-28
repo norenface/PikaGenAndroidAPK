@@ -68,7 +68,8 @@ export default function fishing(w, map) {
     pos: new THREE.Vector3(px, 0, pz), radius: 2.2, label: 'つりをする',
     onInteract: async () => {
       w.player.position.set(px, 0, pz);
-      w.player.rotation.y = Math.atan2(bx - px, bz - pz);
+      w.faceTo(bx, bz);
+      w.pitch = -0.25;
       w.lockMove = true;
       w.audio.sfx('splash');
       bobber.visible = line.visible = true;

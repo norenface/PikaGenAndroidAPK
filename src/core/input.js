@@ -1,4 +1,4 @@
-// タッチ（仮想スティック + タップ）とキーボード入力
+// タッチ（左: 仮想スティックで歩く / 右: ドラッグで見回す / タップ）とキーボード入力
 export class Input {
   constructor(canvas, joyEl) {
     this.move = { x: 0, z: 0 };
@@ -9,6 +9,7 @@ export class Input {
     this.joyEl = joyEl;
     this.knob = joyEl.querySelector('.knob');
     this.pointers = new Map();
+    this.look = { x: 0, y: 0 };
 
     canvas.addEventListener('pointerdown', (e) => this.down(e));
     window.addEventListener('pointermove', (e) => this.moveP(e));
@@ -22,7 +23,7 @@ export class Input {
   }
 
   down(e) {
-    const p = { x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 };
+    const p = { x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, t0: performance.now(), moved: 0 };
     this.pointers.set(e.pointerId, p);
     if (!this.joy && e.clientX < window.innerWidth * 0.45) {
       this.joy = { id: e.pointerId, cx: e.clientX, cy: e.clientY };
@@ -35,6 +36,13 @@ export class Input {
     const p = this.pointers.get(e.pointerId);
     if (!p) return;
     p.moved = Math.max(p.moved, Math.hypot(e.clientX - p.x0, e.clientY - p.y0));
+    if (this.joy?.id !== e.pointerId) {
+      // スティック以外の指のドラッグ = 見回す
+      this.look.x += e.clientX - p.lx;
+      this.look.y += e.clientY - p.ly;
+    }
+    p.lx = e.clientX;
+    p.ly = e.clientY;
     if (this.joy?.id === e.pointerId) {
       let dx = e.clientX - this.joy.cx;
       let dy = e.clientY - this.joy.cy;
@@ -64,13 +72,24 @@ export class Input {
     }
   }
 
+  // この1フレームの見回し量（ラジアン）。ドラッグ量 + 矢印キー左右
+  consumeLook(dt) {
+    const sens = 0.0045;
+    let yaw = this.look.x * sens;
+    const pitch = this.look.y * sens;
+    this.look.x = this.look.y = 0;
+    if (this.keys.has('arrowleft') || this.keys.has('q')) yaw -= 2.2 * dt;
+    if (this.keys.has('arrowright') || this.keys.has('e')) yaw += 2.2 * dt;
+    return { yaw, pitch };
+  }
+
   // 正規化した移動ベクトル（x: 右+, z: 手前+）
   axis() {
     let x = this.move.x;
     let z = this.move.z;
     const k = this.keys;
-    if (k.has('a') || k.has('arrowleft')) x -= 1;
-    if (k.has('d') || k.has('arrowright')) x += 1;
+    if (k.has('a')) x -= 1;
+    if (k.has('d')) x += 1;
     if (k.has('w') || k.has('arrowup')) z -= 1;
     if (k.has('s') || k.has('arrowdown')) z += 1;
     const len = Math.hypot(x, z);

@@ -6,7 +6,7 @@ export class Pikachu {
   constructor(world) {
     this.world = world;
     this.obj = makePikachu();
-    this.obj.scale.setScalar(0.75);
+    this.obj.scale.setScalar(0.48); // 一人称視点でひざ丈くらい
     this.t = 0;
     this.jumpT = 0;
     this.spinT = 0;
@@ -22,7 +22,7 @@ export class Pikachu {
   }
 
   placeNear(p) {
-    this.pos.set(p.x + 1.2, 0, p.z + 0.8);
+    this.pos.set(p.x, 0, p.z);
     this.order = null;
     this.sleeping = false;
   }
@@ -40,7 +40,7 @@ export class Pikachu {
     this.spinT = 1;
   }
   emote(text, color) {
-    this.world.fx(text, this.pos.x, 1.6, this.pos.z, color);
+    this.world.fx(text, this.pos.x, 1.15, this.pos.z, color);
   }
 
   // タッチでなでる
@@ -83,8 +83,8 @@ export class Pikachu {
         this.sleeping = false;
         w.audio.pika('call');
         this.emote('！', '#ff8c1a');
-        const p = w.player.position;
-        this.goTo(p.x + 1, p.z + 1, 6).then(() => this.jump());
+        const p = w.followPoint(1.5);
+        this.goTo(p.x, p.z, 6).then(() => this.jump());
       } else {
         w.audio.pika('normal');
         this.emote('？', '#4a7bd0');
@@ -96,8 +96,8 @@ export class Pikachu {
       this.spin();
       this.emote('♥');
     } else if (/おいで|こっち|来て|きて/.test(phrase)) {
-      const p = w.player.position;
-      this.goTo(p.x + 0.8, p.z + 0.8, 5);
+      const p = w.followPoint(1.2);
+      this.goTo(p.x, p.z, 5);
       w.audio.pika('normal');
     } else if (/おやすみ|お休み|ねんね|寝/.test(phrase)) {
       this.sleeping = true;
@@ -131,17 +131,19 @@ export class Pikachu {
         goal = null;
       }
     } else if (!this.sleeping) {
-      const d = this.pos.distanceTo(p);
-      if (d > 2.4) {
-        goal = p;
-        speed = d > 6 ? 6.5 : 3.8;
+      // 一人称視点で見えるよう、プレイヤーの少し前（右寄り）についてくる
+      const fp = w.followPoint();
+      const d = this.pos.distanceTo(fp);
+      if (d > 1.2) {
+        goal = fp;
+        speed = d > 5 ? 6.5 : 4.2;
         this.wander = null;
       } else {
         this.wanderT -= dt;
         if (this.wanderT <= 0) {
           this.wanderT = 2 + Math.random() * 3;
           const a = Math.random() * Math.PI * 2;
-          this.wander = Math.random() < 0.5 ? null : new THREE.Vector3(p.x + Math.cos(a) * 1.8, 0, p.z + Math.sin(a) * 1.8);
+          this.wander = Math.random() < 0.5 ? null : new THREE.Vector3(fp.x + Math.cos(a) * 0.8, 0, fp.z + Math.sin(a) * 0.8);
           if (Math.random() < 0.15) w.audio.pika('normal');
         }
         if (this.wander) {
@@ -157,7 +159,7 @@ export class Pikachu {
       const dx = goal.x - this.pos.x;
       const dz = goal.z - this.pos.z;
       const len = Math.hypot(dx, dz);
-      const stop = this.order ? 0 : goal === p ? 1.8 : 0;
+      const stop = 0;
       if (len > stop + 0.05) {
         const s = Math.min(speed * dt, len - stop);
         this.pos.x += (dx / len) * s;

@@ -23,7 +23,7 @@ function resize() {
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
   world.camera.aspect = w / h;
-  world.camera.fov = w < h ? 70 : 50; // 縦持ちでも見やすく
+  world.camera.fov = w < h ? 80 : 65; // 一人称の視野（縦持ちは広め）
   world.camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
@@ -86,7 +86,6 @@ title.innerHTML = `
   <div class="note">ファンメイド作品です</div>`;
 document.body.appendChild(title);
 
-world.load('room');
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -95,7 +94,7 @@ function loop(now) {
   renderer.render(world.scene, world.camera);
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+world.load('room').then(() => requestAnimationFrame(loop));
 
 title.querySelector('.start').addEventListener('click', async () => {
   audio.unlock();

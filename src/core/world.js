@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MAPS, COURSES, MAP_LOCKS } from '../maps/data.js';
 import { makeDecor, makeExitMarker, makeTrainer, makeTextSprite, mat } from '../entities/models.js';
-import { Pikachu, angleDiff } from '../entities/pikachu.js';
+import { Pikachu } from '../entities/pikachu.js';
 import { GIMMICKS } from '../gimmicks/index.js';
 import { rng } from './rng.js';
 
@@ -9,13 +10,22 @@ export class World {
   constructor({ renderer, ui, audio, save, input }) {
     Object.assign(this, { renderer, ui, audio, save, input });
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 500);
+    this.camera.rotation.order = 'YXZ';
+    this.pitch = -0.12;
+    this.bob = 0;
+    this.sky = new Sky();
+    this.scene.add(this.sky.group);
+    this.loader = new GLTFLoader();
+    this.envCache = new Map();
     this.hemi = new THREE.HemisphereLight('#ffffff', '#5a7a3a', 1.6);
     this.sun = new THREE.DirectionalLight('#ffffff', 1.6);
     this.sun.position.set(6, 12, 8);
     this.scene.add(this.hemi, this.sun);
 
+    // 一人称視点: トレーナーは位置と向きのためだけに使い、表示しない
     this.player = makeTrainer();
+    this.player.visible = false;
     this.pika = new Pikachu(this);
     this.scene.add(this.player, this.pika.obj);
 
@@ -30,7 +40,6 @@ export class World {
     this.lockMove = false;
     this.actionOverride = null;
     this.raycaster = new THREE.Raycaster();
-    this.camTarget = new THREE.Vector3();
     this.t = 0;
 
     input.onTap = (x, y) => this.tap(x, y);
@@ -52,9 +61,40 @@ export class World {
     await this.gimmick?.enter?.();
   }
 
-  load(mapId, { spawn, from } = {}) {
+  // Blender で作ったマップ（public/maps/<id>.glb + 当たり判定 <id>.json）を読む。無ければ null
+  async loadEnv(mapId) {
+    if (this.envCache.has(mapId)) return this.envCache.get(mapId);
+    let env = null;
+    try {
+      const [gltf, meta] = await Promise.all([
+        this.loader.loadAsync(`./maps/${mapId}.glb`),
+        fetch(`./maps/${mapId}.json`).then((r) => r.json()),
+      ]);
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        // スマホ向けに PBR → Lambert に置き換え（見た目はフラットなローポリ）
+        const m = o.material;
+        const water = /^(water|sea)/.test(m.name);
+        o.material = new THREE.MeshLambertMaterial({
+          color: m.color,
+          vertexColors: !!o.geometry.attributes.color,
+          emissive: m.emissive,
+          transparent: water,
+          opacity: water ? 0.85 : 1,
+        });
+      });
+      env = { scene: gltf.scene, colliders: meta.colliders ?? [] };
+    } catch (e) {
+      console.warn('map model not found, using primitives:', mapId, e?.message);
+    }
+    this.envCache.set(mapId, env);
+    return env;
+  }
+
+  async load(mapId, { spawn, from } = {}) {
     const map = MAPS[mapId];
     if (!map) throw new Error('unknown map ' + mapId);
+    const env = await this.loadEnv(mapId);
     this.gimmick?.dispose?.();
     this.gimmick = null;
     if (this.root) {
@@ -78,12 +118,63 @@ export class World {
 
     // 空と光
     this.scene.background = new THREE.Color(map.sky);
-    this.scene.fog = map.indoor ? null : new THREE.Fog(map.fog ?? map.sky, 25, 70);
+    this.scene.fog = map.indoor ? null : new THREE.Fog(map.fog ?? map.sky, 40, env ? 170 : 70);
+    this.sky.set(map);
     this.hemi.intensity = map.night ? 0.5 : 1.6;
     this.sun.intensity = map.night ? 0.3 : 1.6;
     this.sun.color.set(map.night ? '#8fa3ff' : '#ffffff');
 
-    // 地面
+    if (env) {
+      this.root.add(env.scene);
+      for (const [x, z, r] of env.colliders) this.colliders.push({ x, z, r });
+      for (const w of map.water ?? []) this.colliders.push({ x: w.at[0], z: w.at[1], r: w.r + 0.2 });
+    } else {
+      this.buildPrimitiveGround(map);
+    }
+
+    // 出口
+    for (const ex of map.exits) {
+      const m = makeExitMarker(ex.marker);
+      m.position.set(ex.at[0], 0, ex.at[1]);
+      // マーカーをマップ中心に向ける
+      m.rotation.y = Math.atan2(-ex.at[0], -ex.at[1]);
+      this.root.add(m);
+      this.addInteractable({ obj: m, radius: 2.2, label: ex.label.replace(/（.*）/, ''), onInteract: () => this.useExit(ex) });
+    }
+
+    if (!env) this.buildPrimitiveDecor(map);
+
+    // 配置
+    let sp = map.spawns[spawn] ?? null;
+    if (!sp && from) {
+      const back = map.exits.find((e) => e.to === from);
+      if (back) {
+        const [ex, ez] = back.at;
+        const len = Math.hypot(ex, ez) || 1;
+        sp = [ex - (ex / len) * 3, ez - (ez / len) * 3];
+      }
+    }
+    sp ??= map.spawns.default;
+    this.player.position.set(sp[0], 0, sp[1]);
+    // マップの中心を向いて立つ（中心にいるときは北向き）
+    this.player.rotation.y = Math.hypot(sp[0], sp[1]) > 1 ? Math.atan2(-sp[0], -sp[1]) : Math.PI;
+    this.pitch = -0.12;
+    this.pika.placeNear(this.followPoint());
+    this.updateCamera(0);
+
+    this.ui.setMapName(map.name);
+    this.ui.setFriendship(this.save.friendship);
+    this.audio.playBgm(map.bgm);
+
+    const setup = GIMMICKS[map.gimmick];
+    if (setup) this.gimmick = setup(this, map) ?? null;
+    this.save.data.lastMap = mapId;
+    this.save.write();
+  }
+
+  // ───────── モデルが無いときの簡易背景 ─────────
+  buildPrimitiveGround(map) {
+    const [sx, sz] = map.size;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(sx * 2, sz * 2), mat(map.ground));
     ground.rotation.x = -Math.PI / 2;
     this.root.add(ground);
@@ -98,32 +189,19 @@ export class World {
       sea.rotation.x = -Math.PI / 2;
       sea.position.set(0, -0.01, -sz - 60);
       this.root.add(sea);
-      this.seaMesh = sea;
     }
     for (const w of map.water ?? []) {
       const m = new THREE.Mesh(new THREE.CircleGeometry(w.r, 32), mat('#4aa8e8'));
       m.rotation.x = -Math.PI / 2;
       m.position.set(w.at[0], 0.03, w.at[1]);
       this.root.add(m);
-      const rim = new THREE.Mesh(new THREE.RingGeometry(w.r, w.r + 0.4, 32), mat('#c9b27a'));
-      rim.rotation.x = -Math.PI / 2;
-      rim.position.set(w.at[0], 0.025, w.at[1]);
-      this.root.add(rim);
       this.colliders.push({ x: w.at[0], z: w.at[1], r: w.r + 0.2 });
     }
     if (map.indoor) this.buildRoomShell(sx, sz);
+  }
 
-    // 出口
-    for (const ex of map.exits) {
-      const m = makeExitMarker(ex.marker);
-      m.position.set(ex.at[0], 0, ex.at[1]);
-      // マーカーをマップ中心に向ける
-      m.rotation.y = Math.atan2(-ex.at[0], -ex.at[1]);
-      this.root.add(m);
-      this.addInteractable({ obj: m, radius: 2.2, label: ex.label.replace(/（.*）/, ''), onInteract: () => this.useExit(ex) });
-    }
-
-    // 背景オブジェクト
+  buildPrimitiveDecor(map) {
+    const [sx, sz] = map.size;
     const clear = [
       ...map.exits.map((e) => [e.at[0], e.at[1], 3]),
       ...Object.values(map.spawns).map((p) => [p[0], p[1], 2.5]),
@@ -146,32 +224,6 @@ export class World {
         placed++;
       }
     }
-
-    // 配置
-    let sp = map.spawns[spawn] ?? null;
-    if (!sp && from) {
-      const back = map.exits.find((e) => e.to === from);
-      if (back) {
-        const [ex, ez] = back.at;
-        const len = Math.hypot(ex, ez) || 1;
-        sp = [ex - (ex / len) * 3, ez - (ez / len) * 3];
-      }
-    }
-    sp ??= map.spawns.default;
-    this.player.position.set(sp[0], 0, sp[1]);
-    this.player.rotation.y = Math.PI;
-    this.pika.placeNear(this.player.position);
-    this.camTarget.copy(this.player.position);
-    this.updateCamera(1);
-
-    this.ui.setMapName(map.name);
-    this.ui.setFriendship(this.save.friendship);
-    this.audio.playBgm(map.bgm);
-
-    const setup = GIMMICKS[map.gimmick];
-    if (setup) this.gimmick = setup(this, map) ?? null;
-    this.save.data.lastMap = mapId;
-    this.save.write();
   }
 
   buildRoomShell(sx, sz) {
@@ -236,6 +288,26 @@ export class World {
   distTo(x, z) {
     return Math.hypot(this.player.position.x - x, this.player.position.z - z);
   }
+  // 向いている方向（前・右）の単位ベクトル
+  get forward() {
+    const r = this.player.rotation.y;
+    return { x: Math.sin(r), z: Math.cos(r) };
+  }
+  get right() {
+    const r = this.player.rotation.y;
+    return { x: -Math.cos(r), z: Math.sin(r) };
+  }
+  faceTo(x, z) {
+    const p = this.player.position;
+    this.player.rotation.y = Math.atan2(x - p.x, z - p.z);
+  }
+  // ピカチュウの定位置: 視界に入るよう、少し前の右寄り
+  followPoint(dist = 2.2) {
+    const p = this.player.position;
+    const f = this.forward;
+    const r = this.right;
+    return new THREE.Vector3(p.x + f.x * dist + r.x * 0.6, 0, p.z + f.z * dist + r.z * 0.6);
+  }
   fx(text, x, y, z, color) {
     const sp = makeTextSprite(text, color);
     sp.position.set(x + (Math.random() - 0.5) * 0.4, y, z);
@@ -282,8 +354,14 @@ export class World {
       if (it.enabled && !it.enabled()) continue;
       const ip = it.obj ? it.obj.position : it.pos;
       const d = Math.hypot(ip.x - p.x, ip.z - p.z);
-      if (d < it.radius && d < bd) {
-        bd = d;
+      if (d >= it.radius) continue;
+      // 一人称なので、見ている方向にあるものを優先する（背後のものは真横に来るまで選ばない）
+      const f = this.forward;
+      const dot = d > 1e-3 ? ((ip.x - p.x) * f.x + (ip.z - p.z) * f.z) / d : 1;
+      if (dot < -0.2 && d > 1.2) continue;
+      const score = d - dot * 0.8;
+      if (score < bd) {
+        bd = score;
         best = it;
       }
     }
@@ -354,21 +432,20 @@ export class World {
     this.t += dt;
     const canMove = !this.ui.blocking && !this.lockMove;
     const a = canMove ? this.input.axis() : { x: 0, z: 0 };
-    const speed = 5.2;
+    const look = this.input.consumeLook(dt);
     const pl = this.player;
+    // 見回す（ドラッグ / 矢印キー）。会話中でも見回しはできる
+    pl.rotation.y -= look.yaw;
+    this.pitch = Math.max(-1.2, Math.min(1.0, this.pitch - look.pitch));
+    // 歩く（スティック上 = 前進、左右 = 横歩き）
+    const speed = 4.2;
     const mag = Math.hypot(a.x, a.z);
-    const { rig, legs } = pl.userData;
     if (mag > 0.05) {
-      pl.position.x += a.x * speed * dt;
-      pl.position.z += a.z * speed * dt;
-      pl.rotation.y += angleDiff(Math.atan2(a.x, a.z), pl.rotation.y) * Math.min(1, dt * 12);
-      const sw = Math.sin(this.t * 12) * 0.6 * mag;
-      legs[0].rotation.x = sw;
-      legs[1].rotation.x = -sw;
-      rig.position.y = Math.abs(Math.sin(this.t * 12)) * 0.06;
-    } else {
-      legs[0].rotation.x = legs[1].rotation.x = 0;
-      rig.position.y = 0;
+      const f = this.forward;
+      const r = this.right;
+      pl.position.x += (f.x * -a.z + r.x * a.x) * speed * dt;
+      pl.position.z += (f.z * -a.z + r.z * a.x) * speed * dt;
+      this.bob += dt * 9 * mag;
     }
     this.resolve(pl.position, 0.4);
     this.pika.update(dt);
@@ -392,15 +469,74 @@ export class World {
 
     const near = this.ui.blocking || this.running ? null : this.nearest();
     this.ui.setAction(this.actionOverride?.label ?? near?.label ?? null);
-    this.updateCamera(dt);
+    this.updateCamera();
   }
 
-  updateCamera(dt) {
-    const k = Math.min(1, dt * 5);
-    this.camTarget.lerp(this.player.position, k);
-    const indoor = this.map?.indoor;
-    const off = indoor ? [0, 8.5, 8.5] : [0, 9, 11];
-    this.camera.position.set(this.camTarget.x + off[0], off[1], this.camTarget.z + off[2]);
-    this.camera.lookAt(this.camTarget.x, 0.8, this.camTarget.z);
+  // 一人称カメラ: 目の高さ 1.55m、歩くと少し上下にゆれる
+  updateCamera() {
+    const p = this.player.position;
+    this.camera.position.set(p.x, 1.55 + Math.sin(this.bob) * 0.04, p.z);
+    this.camera.rotation.set(this.pitch, this.player.rotation.y + Math.PI, 0);
+    this.sky.group.position.set(p.x, 0, p.z);
+  }
+}
+
+// 空: グラデーションのドーム + 雲（昼）/ 星（夜）。カメラと一緒に動く
+class Sky {
+  constructor() {
+    this.group = new THREE.Group();
+    this.uniforms = { top: { value: new THREE.Color() }, bottom: { value: new THREE.Color() } };
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(400, 24, 12),
+      new THREE.ShaderMaterial({
+        uniforms: this.uniforms,
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        vertexShader: 'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying float h; void main(){ gl_FragColor = vec4(mix(bottom, top, smoothstep(-0.05, 0.5, h)), 1.0); }',
+      }),
+    );
+    dome.renderOrder = -1;
+    this.group.add(dome);
+
+    this.clouds = new THREE.Group();
+    const r = rng(7);
+    const cm = new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false, transparent: true, opacity: 0.92 });
+    const cg = new THREE.IcosahedronGeometry(1, 1);
+    for (let i = 0; i < 16; i++) {
+      const c = new THREE.Group();
+      for (let k = 0; k < 4; k++) {
+        const m = new THREE.Mesh(cg, cm);
+        m.position.set(k * 6 - 9 + r() * 3, r() * 2, r() * 3);
+        m.scale.set(7 + r() * 4, 3 + r() * 2, 5 + r() * 2);
+        c.add(m);
+      }
+      const a = r() * Math.PI * 2;
+      const d = 140 + r() * 120;
+      c.position.set(Math.cos(a) * d, 50 + r() * 40, Math.sin(a) * d);
+      c.rotation.y = r() * Math.PI;
+      this.clouds.add(c);
+    }
+    this.group.add(this.clouds);
+
+    const pos = [];
+    for (let i = 0; i < 600; i++) {
+      const u = r() * Math.PI * 2;
+      const v = 0.08 + r() * 0.9;
+      pos.push(Math.cos(u) * Math.cos(v) * 350, Math.sin(v) * 350, Math.sin(u) * Math.cos(v) * 350);
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    this.stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: '#ffffff', size: 1.6, sizeAttenuation: false, fog: false }));
+    this.group.add(this.stars);
+  }
+
+  set(map) {
+    this.group.visible = !map.indoor;
+    this.uniforms.bottom.value.set(map.sky);
+    this.uniforms.top.value.set(map.night ? '#05081c' : '#3f8fe0');
+    this.clouds.visible = !map.night;
+    this.stars.visible = !!map.night;
   }
 }
