@@ -471,10 +471,10 @@ export class World {
     const act = this.pika.activity;
     if (act) {
       title = act.title ?? 'ピカチュウに';
-      words = act.verbs.map((v) => VERBS[v].label);
+      words = act.verbs.flatMap((v) => VERBS[v].hints ?? [VERBS[v].label]);
     } else if (this.focus) {
       title = this.focus.name;
-      words = this.tasksOf(this.focus).map((t) => t.label ?? VERBS[t.verbs[0]].label);
+      words = this.tasksOf(this.focus).flatMap((t) => (t.label ? [t.label] : VERBS[t.verbs[0]].hints ?? [VERBS[t.verbs[0]].label]));
     } else {
       words = ['ピカチュウ！', 'こっちおいで', 'いいこだね'];
     }

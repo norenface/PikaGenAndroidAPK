@@ -4,7 +4,7 @@
 export const toHiragana = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
 export const normalize = (raw) => toHiragana(raw.replace(/\s+/g, ''));
 
-// 作業の指示（ねらった物に対して使う）
+// 作業の指示（ねらった物に対して使う）。hints があれば画面のヒントにはそのことばを全部出す
 export const VERBS = {
   dig: { label: 'ほって', re: /ほって|ほれ|ほる|掘/ },
   harvest: { label: 'ぬいて', re: /ぬいて|抜い|しゅうかく|収穫/ },
@@ -17,7 +17,7 @@ export const VERBS = {
   open: { label: 'あけて', re: /あけて|開けて/ },
   fish: { label: 'つって', re: /つって|釣って|つり|釣り/ },
   pull: { label: 'ひいて', re: /ひいて|引いて|ひけ|引け|いまだ|今だ/ },
-  smash: { label: 'わって', re: /わって|割って|たたいて|叩いて|そこ|えい/ },
+  smash: { label: 'わって', hints: ['わって', 'たたいて', 'そこ'], re: /わって|割って|われ|割れ|たたいて|叩いて|たたけ|叩け|そこ|えい/ },
   right: { label: 'みぎ', re: /みぎ|右/ },
   left: { label: 'ひだり', re: /ひだり|左/ },
   front: { label: 'まえ', re: /まえ|前/ },
