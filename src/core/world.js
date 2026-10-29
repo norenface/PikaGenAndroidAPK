@@ -427,7 +427,8 @@ export class World {
     const text = normalize(raw);
     // 続けて指示を受ける作業（つり・スイカわり）
     const act = pika.activity;
-    const actVerb = act && findVerb(text, act.verbs);
+    // accepts: 受け付けることば（ヒントに出す verbs より広くてもよい）
+    const actVerb = act && findVerb(text, act.accepts ?? act.verbs);
     if (actVerb) {
       await pika.ponder(true);
       act.onCommand(actVerb);
