@@ -60,6 +60,10 @@ export class Pikachu {
   spin() {
     this.spinT = 1;
   }
+  // すべって転ぶ（あおむけにひっくり返る）
+  fall(dur = 1.6) {
+    this.fallT = dur;
+  }
   emote(text, color) {
     this.world.fx(text, this.pos.x, 1.15, this.pos.z, color);
   }
@@ -244,7 +248,8 @@ export class Pikachu {
       this.spinT -= dt;
       rig.rotation.y = (1 - Math.max(0, this.spinT)) * Math.PI * 2;
     } else rig.rotation.y = 0;
-    rig.rotation.x = this.sleeping ? 0.2 : 0;
+    if (this.fallT > 0) this.fallT -= dt;
+    rig.rotation.x = this.fallT > 0 ? -1.4 : this.sleeping ? 0.2 : 0;
     rig.scale.y = this.sleeping ? 0.85 + Math.sin(this.t * 2) * 0.03 : 1;
     // パーツの基本の向き（モデルのポーズ）に揺れを足す
     const rot = (o, axis, v) => (o.rotation[axis] = (o.userData.base?.[axis] ?? 0) + v);
