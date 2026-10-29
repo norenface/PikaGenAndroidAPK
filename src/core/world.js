@@ -54,7 +54,7 @@ export class World {
     this.marker = makeTextSprite('▼', '#ffb000', 0.75);
     this.marker.visible = false;
     this.scene.add(this.marker);
-    this.onSay = null; // ヒントのことばをタップしたとき（main.js が声と同じ処理につなぐ）
+    this.onSay = null; // 声で届いたことばを処理する入口（main.js が設定。テストからも使う）
 
     input.onTap = (x, y) => this.tap(x, y);
     input.onAction = () => this.doAction();
@@ -421,7 +421,7 @@ export class World {
     return best;
   }
 
-  // 声（またはヒントのタップ）で届いたことばを処理する。ピカチュウが反応し終わるまで待つ
+  // 声で届いたことばを処理する。ピカチュウが反応し終わるまで待つ
   async command(raw) {
     const pika = this.pika;
     const text = normalize(raw);
@@ -461,10 +461,10 @@ export class World {
       return;
     }
     // 歩き出したら聞き取りは再開してよいので、作業の終わりは待たない
-    pika.perform(target, task).catch((e) => console.error(e));
+    pika.perform(target, task, text).catch((e) => console.error(e));
   }
 
-  // 画面に出すヒント（言えることば）。タップしても同じ指示になる
+  // 画面に出すヒント（言えることば）。表示だけで、指示は声でする
   updateHints() {
     let title = '';
     let words = [];
@@ -479,7 +479,7 @@ export class World {
       words = ['ピカチュウ！', 'こっちおいで', 'いいこだね'];
     }
     if (this.ui.blocking) words = [];
-    this.ui.setHints(title, words, (w) => this.onSay?.(w));
+    this.ui.setHints(title, words);
   }
 
   tap(cx, cy) {

@@ -3,12 +3,12 @@ import { makeDecor, part, mat } from '../entities/models.js';
 import { ITEMS } from '../maps/items.js';
 
 // うちのにわ: はたけ（種まき→成長→収穫）/ かだん（水やり）/ いけ
-// 作業はすべてピカチュウにたのむ（たねは プレイヤーが わたす）
+// 作業はすべてピカチュウに声でたのむ。「にんじんを うえて」のように たねの名前も声で伝える（言わなければピカチュウがえらぶ）
 const CROPS = {
-  ninjin: { name: 'にんじん', grow: 40 },
-  kabocha: { name: 'かぼちゃ', grow: 90 },
-  ichigo: { name: 'いちご', grow: 60 },
-  daikon: { name: 'だいこん', grow: 50 },
+  ninjin: { name: 'にんじん', grow: 40, re: /にんじん|人参/ },
+  kabocha: { name: 'かぼちゃ', grow: 90, re: /かぼちゃ|南瓜/ },
+  ichigo: { name: 'いちご', grow: 60, re: /いちご|苺/ },
+  daikon: { name: 'だいこん', grow: 50, re: /だいこん|大根/ },
 };
 const today = () => new Date().toDateString();
 
@@ -30,7 +30,7 @@ export default function garden(w, map) {
     w.addInteractable({
       obj: soil, name: 'はたけ', reach: 1.2,
       tasks: [
-        { verbs: ['plant', 'dig'], label: 'たねを うえて', enabled: empty, run: (pika) => plant(plot, pika) },
+        { verbs: ['plant', 'dig'], label: 'にんじん・かぼちゃ・いちご・だいこん を うえて', enabled: empty, run: (pika, text) => plant(plot, pika, text) },
         { verbs: ['harvest', 'take', 'dig'], label: 'ぬいて', enabled: ready, run: (pika) => harvest(plot, pika) },
         { verbs: ['look'], enabled: () => !empty() && !ready(), run: (pika) => check(plot, pika) },
       ],
@@ -54,9 +54,14 @@ export default function garden(w, map) {
   }
   plots.forEach(drawCrop);
 
-  async function plant(plot, pika) {
-    const pick = await w.ui.choose('ピカチュウに どの たねを わたす？', Object.entries(CROPS).map(([id, c]) => ({ label: c.name, value: id, note: `${c.grow}びょう` })));
-    if (!pick) return pika.confused();
+  async function plant(plot, pika, text) {
+    // 声で言った たね。言わなかったら ピカチュウが すきなのを えらぶ
+    const ids = Object.keys(CROPS);
+    let pick = ids.find((id) => CROPS[id].re.test(text));
+    if (!pick) {
+      pick = ids[Math.floor(Math.random() * ids.length)];
+      w.ui.toast(`ピカチュウは ${CROPS[pick].name}の たねを えらんだ！`);
+    }
     await pika.busy({ sfx: 'dig', mark: '…' });
     G.plots[plot.i] = { crop: pick, at: Date.now() };
     w.save.write();

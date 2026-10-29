@@ -69,21 +69,18 @@ export class UI {
     el.classList.toggle('off', st === 'off');
     this.el.sensorText.textContent = { listening: 'きいてるよ', busy: 'かんがえちゅう', off: 'マイク ✕' }[st];
   }
-  // ピカチュウに言えることばのヒント。タップすると、そのことばを言ったのと同じになる
-  setHints(title, words, onPick) {
+  // ピカチュウに言えることばのヒント（表示だけ。指示は声でする）
+  setHints(title, words) {
     const key = title + '|' + words.join(',');
-    this.onPick = onPick;
     if (key === this.hintKey) return;
     this.hintKey = key;
     this.el.hints.classList.toggle('hidden', !words.length);
-    this.el.htitle.textContent = title ? `${title} ▶ ピカチュウに` : 'ピカチュウに';
+    this.el.htitle.textContent = `🎤 ${title ? title + ' ▶ ' : ''}ピカチュウに いってみよう`;
     this.el.hwords.innerHTML = '';
     for (const w of words) {
-      const b = document.createElement('button');
+      const b = document.createElement('span');
       b.className = 'hw';
       b.textContent = `「${w}」`;
-      b.addEventListener('pointerdown', (e) => e.stopPropagation());
-      b.addEventListener('click', () => this.onPick?.(w));
       this.el.hwords.appendChild(b);
     }
   }

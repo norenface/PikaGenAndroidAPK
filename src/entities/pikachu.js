@@ -106,7 +106,8 @@ export class Pikachu {
   }
 
   // ねらった物のところへ行って作業する（終わるまで待つ Promise）
-  async perform(it, task) {
+  // text: 聞こえたことば（「にんじんを うえて」のように中身を指定する作業で使う）
+  async perform(it, task, text = '') {
     const w = this.world;
     this.working = task;
     this.sleeping = false;
@@ -120,7 +121,7 @@ export class Pikachu {
       const reach = it.reach ?? 0.9;
       await this.goTo(p.x + ((pl.x - p.x) / d) * reach, p.z + ((pl.z - p.z) / d) * reach, 4.5);
       this.faceAt = p.clone();
-      await task.run(this);
+      await task.run(this, text);
     } finally {
       this.working = null;
       this.faceAt = null;

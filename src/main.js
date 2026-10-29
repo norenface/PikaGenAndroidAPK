@@ -47,7 +47,7 @@ const voice = new VoiceListener({
 });
 ui.setSensor(voice.supported ? 'busy' : 'off');
 
-// ピカチュウへのことば（声・ヒントのタップ共通）。ピカチュウが考えて反応するまで聞き取りを止める
+// ピカチュウへのことば（声）。ピカチュウが考えて反応するまで聞き取りを止める
 let talking = false;
 async function talk(text) {
   if (talking || !understands(text)) return;
