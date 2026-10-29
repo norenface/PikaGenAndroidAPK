@@ -1,8 +1,14 @@
 import * as THREE from 'three';
 import { part } from '../entities/models.js';
 
-// スオウかいがん: スイカわり。目かくし中はピカチュウの声（とヒント文字）が頼り。
+// スオウかいがん: スイカわり。めかくしをしたピカチュウを、声で みちびく。
+//   スイカを見て「わって」→ ピカチュウがめかくしをしてスタート位置へ
+//   「みぎ」「ひだり」「まえ」「うしろ」（自分が向いている方向が基準）で動かし、「わって！」でぼうをふる
 // 成功すると「スオウじま」へのふねが解放される。
+const STEP = 1.2;
+const HIT_R = 1.0;
+const SWINGS = 3;
+
 export default function watermelon(w, map) {
   const P = map.points;
   const [sx, sz] = P.suika;
@@ -22,98 +28,124 @@ export default function watermelon(w, map) {
   para.add(part(new THREE.ConeGeometry(1.8, 0.6, 8), '#ff6b6b', 0, 2.7, 0));
   w.addCollider(...P.parasol, 0.3);
 
-  let playing = false;
-  let swings = 0;
-  let hintT = 0;
-  const stick = part(new THREE.CylinderGeometry(0.05, 0.05, 1.4, 6), '#a87a45', 0.45, 1.3, 0.2);
-  stick.visible = false;
-  w.player.userData.rig.add(stick);
-
-  function hint() {
-    const p = w.player.position;
-    const dx = sx - p.x;
-    const dz = sz - p.z;
-    const d = Math.hypot(dx, dz);
-    // 一人称なので、いま向いている方向から見た前後左右で教える
-    const f = w.forward;
-    const r = w.right;
-    const ahead = dx * f.x + dz * f.z;
-    const side = dx * r.x + dz * r.z;
-    const dir = Math.abs(side) > Math.abs(ahead) ? (side > 0 ? 'みぎ →' : '← ひだり') : ahead > 0 ? '↑ まえ' : '↓ うしろ';
-    const heat = d < 1.2 ? 'ピカピカ！！ ここ！' : d < 3 ? 'ピカッ！ ちかい！' : d < 6 ? 'ピカ… ' : 'ピ……　とおい';
-    w.ui.setBlind(true, `${heat}　${d < 1.2 ? '' : dir}`);
-    for (let i = 0; i < (d < 1.2 ? 3 : d < 3 ? 2 : 1); i++) setTimeout(() => w.audio.pika('hint'), i * 120);
+  // ピカチュウの めかくし と ぼう（モデルの大きさに合わせて付ける）
+  let gear = null;
+  function wearGear(pika) {
+    const { rig, head } = pika.obj.userData;
+    const k = pika.unit === 1 ? 1 / 0.48 : 1; // 簡易モデルは 0.48 倍表示
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.235 * k, 0.03 * k, 6, 20), new THREE.MeshLambertMaterial({ color: '#222266' }));
+    band.rotation.x = Math.PI / 2;
+    band.position.y = (pika.unit === 1 ? 0.05 : 0.03) * k;
+    head.add(band);
+    const stick = part(new THREE.CylinderGeometry(0.03 * k, 0.03 * k, 0.8 * k, 6), '#a87a45', 0.22 * k, 0.55 * k, 0.15 * k);
+    rig.add(stick);
+    gear = { band, stick, head, rig };
+  }
+  function removeGear() {
+    if (!gear) return;
+    gear.head.remove(gear.band);
+    gear.rig.remove(gear.stick);
+    gear = null;
   }
 
-  async function swing() {
-    if (!playing) return;
+  let finish = null;
+  let swings = 0;
+
+  // プレイヤーの向きを基準に、ピカチュウを1歩うごかす
+  function step(pika, verb) {
+    const f = w.forward;
+    const r = w.right;
+    const v = { front: [f.x, f.z], back: [-f.x, -f.z], right: [r.x, r.z], left: [-r.x, -r.z] }[verb];
+    pika.goTo(pika.pos.x + v[0] * STEP, pika.pos.z + v[1] * STEP, 2.5);
+    w.audio.pika('hint');
+  }
+
+  async function swing(pika) {
     swings++;
-    stick.rotation.x = -1.2;
-    setTimeout(() => (stick.rotation.x = 0), 200);
-    const d = w.distTo(sx, sz);
-    if (d < 1.3) {
+    if (gear) {
+      gear.stick.rotation.x = 1.3;
+      setTimeout(() => gear && (gear.stick.rotation.x = 0), 250);
+    }
+    pika.jump(0.3);
+    const d = Math.hypot(pika.pos.x - sx, pika.pos.z - sz);
+    if (d < HIT_R) {
       w.audio.sfx('smash');
-      end();
       whole.visible = false;
       halves.visible = true;
+      end();
       w.audio.sfx('fanfare');
-      w.pika.jump();
-      await w.ui.say(['パカーン！ スイカが みごとに われた！', 'ピカチュウと いっしょに スイカを たべた。あまくて おいしい！']);
+      pika.jump(0.7);
+      await w.ui.say(['パカーン！ ピカチュウが スイカを みごとに わった！', 'いっしょに スイカを たべた。あまくて おいしい！']);
       await w.getItem('suikaPiece', 'スイカのかけら');
       w.friendship(3);
       if (!w.save.flag('watermelonCleared')) {
         w.save.setFlag('watermelonCleared');
-        await w.ui.say('ふなのりさん「いい うでだね！ スオウじまへの ふねに のせてあげよう」');
+        await w.ui.say('ふなのりさん「いい コンビだね！ スオウじまへの ふねに のせてあげよう」');
       }
-      return;
+      return done();
     }
     w.audio.sfx('dig');
-    if (swings >= 3) {
+    if (swings >= SWINGS) {
       end();
       w.audio.sfx('ng');
-      return w.ui.say('すなを たたいてしまった……。また ちょうせんしよう！');
+      pika.confused();
+      await w.ui.say('すなを たたいてしまった……。また ちょうせんしよう！');
+      return done();
     }
-    w.ui.toast(`はずれ！ あと ${3 - swings}かい`);
+    w.ui.toast(`はずれ！ あと ${SWINGS - swings}かい`);
   }
 
   function end() {
-    playing = false;
-    stick.visible = false;
-    w.ui.setBlind(false);
-    w.actionOverride = null;
+    w.pika.activity = null;
+    removeGear();
+  }
+  function done() {
+    finish?.();
+    finish = null;
   }
 
+  // はじめ方の説明（プレイヤーが読む）
   w.addInteractable({
-    obj: suika, radius: 2.2, label: 'スイカわりを する',
-    enabled: () => !playing,
-    onInteract: async () => {
-      if (halves.visible) return w.ui.say('スイカは もう われている。（また こんど ちょうせんしよう）');
-      const ok = await w.ui.choose('スイカわりに ちょうせんする？（3かいまで ふれるよ）', [{ label: 'やる！', value: true }]);
-      if (!ok) return;
-      await w.ui.say(['めかくしを して、くるくる まわって……', 'ピカチュウの こえを たよりに スイカを さがそう！']);
-      w.player.position.set(P.start[0] + (Math.random() - 0.5) * 6, 0, P.start[1]);
-      playing = true;
-      swings = 0;
-      hintT = 0;
-      stick.visible = true;
-      w.actionOverride = { label: 'わる！', fn: swing };
-    },
+    pos: new THREE.Vector3(P.start[0], 0, P.start[1] - 2.5), radius: 2.0, label: 'かんばんを よむ',
+    onInteract: () =>
+      w.ui.say([
+        '「スイカわり ちょうせんしゃ ぼしゅう！」',
+        'スイカを みて ピカチュウに「わって」と たのむと、めかくしを して スタートするよ。',
+        '「みぎ」「ひだり」「まえ」「うしろ」で みちびいて、スイカの まえで「わって！」。チャンスは 3かい。',
+      ]),
+  });
+
+  w.addInteractable({
+    obj: suika, name: 'スイカ', reach: 1.0,
+    tasks: [
+      {
+        verbs: ['smash'],
+        enabled: () => !halves.visible,
+        run: (pika) =>
+          new Promise((resolve) => {
+            finish = resolve;
+            swings = 0;
+            (async () => {
+              await pika.goTo(P.start[0] + (Math.random() - 0.5) * 5, P.start[1], 4);
+              wearGear(pika);
+              pika.spin();
+              pika.faceAt = null;
+              w.ui.toast('みぎ・ひだり・まえ・うしろ で みちびいて「わって！」');
+              pika.activity = {
+                title: 'スイカわり',
+                verbs: ['smash', 'right', 'left', 'front', 'back'],
+                onCommand: (v) => (v === 'smash' ? swing(pika) : step(pika, v)),
+              };
+            })();
+          }),
+      },
+    ],
   });
 
   return {
-    update(dt) {
-      if (!playing) return;
-      hintT -= dt;
-      if (hintT <= 0) {
-        hintT = 1.2;
-        hint();
-      }
-      // ピカチュウはスイカの横で応援する
-      if (!w.pika.order && w.pika.pos.distanceTo(new THREE.Vector3(sx + 1.5, 0, sz)) > 0.5) w.pika.goTo(sx + 1.5, sz);
-    },
     dispose() {
       end();
-      w.player.userData.rig.remove(stick);
+      done();
     },
   };
 }

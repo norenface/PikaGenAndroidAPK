@@ -5,6 +5,7 @@ import { makeDecor, makeExitMarker, makeTrainer, makeTextSprite, mat } from '../
 import { Pikachu } from '../entities/pikachu.js';
 import { GIMMICKS } from '../gimmicks/index.js';
 import { rng } from './rng.js';
+import { VERBS, normalize, findVerb } from './commands.js';
 
 export class World {
   constructor({ renderer, ui, audio, save, input }) {
@@ -46,6 +47,14 @@ export class World {
     this.actionOverride = null;
     this.raycaster = new THREE.Raycaster();
     this.t = 0;
+
+    // ピカチュウにたのむ物の目印（▼）
+    this.focus = null;
+    this.pinned = null;
+    this.marker = makeTextSprite('▼', '#ffb000', 0.75);
+    this.marker.visible = false;
+    this.scene.add(this.marker);
+    this.onSay = null; // ヒントのことばをタップしたとき（main.js が声と同じ処理につなぐ）
 
     input.onTap = (x, y) => this.tap(x, y);
     input.onAction = () => this.doAction();
@@ -103,6 +112,8 @@ export class World {
     this.particles = [];
     this.actionOverride = null;
     this.lockMove = false;
+    this.focus = this.pinned = null;
+    this.pika.activity = null;
     this.ui.setTimer(null);
     this.ui.setBlind(false);
     this.map = map;
@@ -339,12 +350,13 @@ export class World {
   }
 
   // ───────── 入力 ─────────
+  // プレイヤー自身がする行動（出口・はかせとの通信・看板など）。右下のボタンに出る
   nearest() {
     let best = null;
     let bd = Infinity;
     const p = this.player.position;
     for (const it of this.interactables) {
-      if (it.enabled && !it.enabled()) continue;
+      if (!it.onInteract || (it.enabled && !it.enabled())) continue;
       const ip = it.obj ? it.obj.position : it.pos;
       const d = Math.hypot(ip.x - p.x, ip.z - p.z);
       if (d >= it.radius) continue;
@@ -379,6 +391,97 @@ export class World {
     if (it) this.run(it);
   }
 
+  // ───────── ピカチュウへの指示 ─────────
+  // いま使える作業
+  tasksOf(it) {
+    return (it?.tasks ?? []).filter((t) => !t.enabled || t.enabled());
+  }
+
+  // ねらい: タップで選んだ物、なければ見ている方向にある一番近い物
+  pickFocus() {
+    if (this.pinned && (!this.interactables.includes(this.pinned) || !this.tasksOf(this.pinned).length)) this.pinned = null;
+    if (this.pinned) return this.pinned;
+    const p = this.player.position;
+    const f = this.forward;
+    let best = null;
+    let bd = Infinity;
+    for (const it of this.interactables) {
+      if (!this.tasksOf(it).length) continue;
+      const ip = it.obj ? it.obj.position : it.pos;
+      const d = Math.hypot(ip.x - p.x, ip.z - p.z);
+      if (d > 11) continue;
+      const dot = d > 1e-3 ? ((ip.x - p.x) * f.x + (ip.z - p.z) * f.z) / d : 1;
+      if (dot < 0.75 && d > 1.5) continue; // 視野のまんなか付近だけ
+      const score = d * 0.25 + (1 - dot) * 6;
+      if (score < bd) {
+        bd = score;
+        best = it;
+      }
+    }
+    return best;
+  }
+
+  // 声（またはヒントのタップ）で届いたことばを処理する。ピカチュウが反応し終わるまで待つ
+  async command(raw) {
+    const pika = this.pika;
+    const text = normalize(raw);
+    // 続けて指示を受ける作業（つり・スイカわり）
+    const act = pika.activity;
+    const actVerb = act && findVerb(text, act.verbs);
+    if (actVerb) {
+      await pika.ponder(true);
+      act.onCommand(actVerb);
+      return;
+    }
+    const verb = findVerb(text);
+    if (!verb) {
+      await pika.ponder();
+      pika.hear(text);
+      await wait(900);
+      return;
+    }
+    // 話しかけた瞬間に向いている物（またはタップで選んだ物）
+    const target = this.pickFocus();
+    const task = this.tasksOf(target).find((t) => t.verbs.includes(verb));
+    await pika.ponder();
+    if (!task) {
+      pika.confused();
+      const words = this.tasksOf(target).map((t) => `「${t.label ?? VERBS[t.verbs[0]].label}」`);
+      this.ui.toast(target ? `${target.name}には ${words.join('')} と たのもう` : 'たのみたい ものの ほうを むいてね（タップでも えらべるよ）', 3000);
+      return;
+    }
+    if (pika.working || act) {
+      pika.confused();
+      this.ui.toast('ピカチュウは いま ほかの ことを しているよ');
+      return;
+    }
+    if (!pika.obeys()) {
+      pika.refuse();
+      this.ui.toast('ピカチュウは いやみたい……。なかよく なると きいてくれるよ', 2600);
+      return;
+    }
+    // 歩き出したら聞き取りは再開してよいので、作業の終わりは待たない
+    pika.perform(target, task).catch((e) => console.error(e));
+  }
+
+  // 画面に出すヒント（言えることば）。タップしても同じ指示になる
+  updateHints() {
+    let title = '';
+    let words = [];
+    const act = this.pika.activity;
+    if (act) {
+      title = act.title ?? 'ピカチュウに';
+      words = act.verbs.map((v) => VERBS[v].label);
+    } else if (this.focus) {
+      title = this.focus.name;
+      words = this.tasksOf(this.focus).map((t) => t.label ?? VERBS[t.verbs[0]].label);
+    } else {
+      words = ['ピカチュウ！', 'こっちおいで', 'いいこだね'];
+    }
+    if (this.ui.blocking) words = [];
+    this.ui.setHints(title, words, (w) => this.onSay?.(w));
+  }
+
   tap(cx, cy) {
     if (this.ui.blocking || this.running) return;
     const ndc = new THREE.Vector2((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
@@ -388,7 +491,7 @@ export class World {
       else this.ui.toast('ピカチュウの そばに いこう');
       return;
     }
-    const withObj = this.interactables.filter((i) => i.obj && (!i.enabled || i.enabled()));
+    const withObj = this.interactables.filter((i) => i.obj && ((i.onInteract && (!i.enabled || i.enabled())) || this.tasksOf(i).length));
     const hits = this.raycaster.intersectObjects(withObj.map((i) => i.obj), true);
     if (!hits.length) return;
     let o = hits[0].object;
@@ -398,6 +501,12 @@ export class World {
       o = o.parent;
     }
     if (!it) return;
+    // ピカチュウにたのめる物は「ねらい」にする。そうでなければプレイヤーが調べる
+    if (this.tasksOf(it).length) {
+      this.pinned = it;
+      this.audio.sfx('select');
+      return;
+    }
     const ip = it.obj.position;
     if (this.distTo(ip.x, ip.z) < Math.max(it.radius * 2, 5)) this.run(it);
     else this.ui.toast('もっと ちかくに いこう');
@@ -462,6 +571,17 @@ export class World {
 
     const near = this.ui.blocking || this.running ? null : this.nearest();
     this.ui.setAction(this.actionOverride?.label ?? near?.label ?? null);
+    // ピカチュウにたのむ物の目印とヒント
+    this.focus = this.pika.activity ? null : this.pickFocus();
+    this.marker.visible = !!this.focus;
+    if (this.focus) {
+      const it = this.focus;
+      const o = it.obj ?? null;
+      if (it.markerY == null) it.markerY = o ? new THREE.Box3().setFromObject(o).max.y + 0.35 : 1.2;
+      const ip = o ? o.position : it.pos;
+      this.marker.position.set(ip.x, it.markerY + Math.abs(Math.sin(this.t * 4)) * 0.15, ip.z);
+    }
+    this.updateHints();
     this.updateCamera();
   }
 
@@ -490,6 +610,8 @@ function toLambert(root) {
   });
   return root;
 }
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 空: グラデーションのドーム + 雲（昼）/ 星（夜）。カメラと一緒に動く
 class Sky {

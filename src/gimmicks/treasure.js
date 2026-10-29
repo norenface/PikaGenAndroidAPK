@@ -14,7 +14,7 @@ export default function treasure(w, map) {
   sign.add(part(new THREE.BoxGeometry(1, 0.6, 0.08), '#f5e6c8', 0, 1.3, 0));
   w.addInteractable({
     obj: sign, radius: 2, label: 'かんばんを よむ',
-    onInteract: () => w.ui.say(['「かいぞく キャプテンの たから ここに ねむる」', '「すなやまの どれか ひとつ……」']),
+    onInteract: () => w.ui.say(['「かいぞく キャプテンの たから ここに ねむる」', '「すなやまの どれか ひとつ……」', '（すなやまを みて ピカチュウに「ほって」と たのもう）']),
   });
 
   const mounds = keys.map((k) => {
@@ -22,25 +22,23 @@ export default function treasure(w, map) {
     const obj = w.add(part(new THREE.SphereGeometry(0.8, 12, 8), '#e2c17a', 0, 0, 0, 1, 0.45, 1), x, z);
     const md = { k, obj, dug: false };
     w.addInteractable({
-      obj, radius: 1.9, label: 'ほる',
-      enabled: () => !md.dug,
-      onInteract: () => dig(md),
+      obj, name: 'すなやま', reach: 1.0,
+      tasks: [{ verbs: ['dig'], enabled: () => !md.dug, run: (pika) => dig(md, pika) }],
     });
     return md;
   });
 
-  async function dig(md) {
+  // ピカチュウが砂山をほる
+  async function dig(md, pika) {
     md.dug = true;
-    w.lockMove = true;
-    for (let i = 0; i < 3; i++) {
-      w.audio.sfx('dig');
-      w.fx('…', md.obj.position.x, 1, md.obj.position.z, '#8a5a2b');
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    w.lockMove = false;
+    await pika.busy({ sfx: 'dig', mark: '…', color: '#8a5a2b', n: 4, gap: 320 });
     md.obj.scale.y = 0.15;
     if (md.k !== answer) {
-      if (Math.random() < 0.35) return w.getItem('kaigara', 'さくらがい');
+      if (Math.random() < 0.35) {
+        pika.emote('♪', '#ff92b2');
+        return w.getItem('kaigara', 'さくらがい');
+      }
+      pika.confused();
       return w.ui.toast('ここには なにも なかった');
     }
     const chest = w.add(new THREE.Group(), md.obj.position.x, md.obj.position.z);
@@ -48,7 +46,7 @@ export default function treasure(w, map) {
     const lid = part(new THREE.BoxGeometry(1.02, 0.2, 0.72), '#a0522d', 0, 0.7, 0);
     chest.add(lid, part(new THREE.BoxGeometry(0.2, 0.2, 0.05), '#ffd700', 0, 0.5, 0.37));
     w.audio.sfx('fanfare');
-    w.pika.jump();
+    pika.jump(0.7);
     await w.ui.say('ガチッ！ なにか かたいものに あたった！');
     lid.rotation.x = -1.2;
     lid.position.set(0, 0.85, -0.3);
@@ -66,6 +64,7 @@ export default function treasure(w, map) {
       sniffT -= dt;
       if (sniffT > 0) return;
       sniffT = 10;
+      if (w.pika.working) return;
       const target = mounds.find((m) => m.k === answer);
       if (target.dug) return;
       // なかよし度が高いほど 正しい場所を教えてくれる

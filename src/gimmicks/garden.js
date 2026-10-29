@@ -3,6 +3,7 @@ import { makeDecor, part, mat } from '../entities/models.js';
 import { ITEMS } from '../maps/items.js';
 
 // うちのにわ: はたけ（種まき→成長→収穫）/ かだん（水やり）/ いけ
+// 作業はすべてピカチュウにたのむ（たねは プレイヤーが わたす）
 const CROPS = {
   ninjin: { name: 'にんじん', grow: 40 },
   kabocha: { name: 'かぼちゃ', grow: 90 },
@@ -24,14 +25,15 @@ export default function garden(w, map) {
     const crop = w.add(new THREE.Group(), x, z);
     const plot = { i, x, z, soil, crop };
     plots.push(plot);
+    const empty = () => !G.plots[i];
+    const ready = () => !!G.plots[i] && progress(G.plots[i]) >= 1;
     w.addInteractable({
-      obj: soil, radius: 1.6,
-      get label() {
-        const s = G.plots[i];
-        if (!s) return 'たねを まく';
-        return progress(s) >= 1 ? 'しゅうかくする' : 'ようすを みる';
-      },
-      onInteract: () => usePlot(plot),
+      obj: soil, name: 'はたけ', reach: 1.2,
+      tasks: [
+        { verbs: ['plant', 'dig'], label: 'たねを うえて', enabled: empty, run: (pika) => plant(plot, pika) },
+        { verbs: ['harvest', 'take', 'dig'], label: 'ぬいて', enabled: ready, run: (pika) => harvest(plot, pika) },
+        { verbs: ['look'], enabled: () => !empty() && !ready(), run: (pika) => check(plot, pika) },
+      ],
     });
   }
 
@@ -52,24 +54,31 @@ export default function garden(w, map) {
   }
   plots.forEach(drawCrop);
 
-  async function usePlot(plot) {
+  async function plant(plot, pika) {
+    const pick = await w.ui.choose('ピカチュウに どの たねを わたす？', Object.entries(CROPS).map(([id, c]) => ({ label: c.name, value: id, note: `${c.grow}びょう` })));
+    if (!pick) return pika.confused();
+    await pika.busy({ sfx: 'dig', mark: '…' });
+    G.plots[plot.i] = { crop: pick, at: Date.now() };
+    w.save.write();
+    drawCrop(plot);
+    pika.emote('♪', '#3a8a3a');
+    w.ui.toast(`ピカチュウが ${CROPS[pick].name}の たねを うえた！`);
+  }
+
+  async function check(plot, pika) {
     const s = G.plots[plot.i];
-    if (!s) {
-      const pick = await w.ui.choose('なんの たねを まく？', Object.entries(CROPS).map(([id, c]) => ({ label: c.name, value: id, note: `${c.grow}びょう` })));
-      if (!pick) return;
-      G.plots[plot.i] = { crop: pick, at: Date.now() };
-      w.save.write();
-      w.audio.sfx('dig');
-      drawCrop(plot);
-      w.pika.goTo(plot.x + 1, plot.z + 1).then(() => w.pika.emote('♪', '#3a8a3a'));
-      return;
-    }
-    const p = progress(s);
-    if (p < 1) return w.ui.say(`${CROPS[s.crop].name}が そだっている……（${Math.floor(p * 100)}%）`);
+    await pika.busy({ sfx: null, mark: '？', color: '#4a7bd0', n: 2 });
+    w.ui.toast(`${CROPS[s.crop].name}が そだっている……（${Math.floor(progress(s) * 100)}%）`);
+  }
+
+  async function harvest(plot, pika) {
+    const s = G.plots[plot.i];
+    await pika.busy({ sfx: 'dig', mark: '！', color: '#3a8a3a', n: 3, gap: 300 });
     G.plots[plot.i] = null;
     w.save.write();
     drawCrop(plot);
-    w.pika.jump();
+    pika.jump(0.6);
+    w.friendship(1);
     await w.getItem(s.crop, CROPS[s.crop].name);
   }
 
@@ -83,33 +92,49 @@ export default function garden(w, map) {
   const setBloom = () => flowers.forEach((f) => f.scale.setScalar(G.wateredDay === today() ? 2.2 : 1.2));
   setBloom();
   w.addInteractable({
-    pos: new THREE.Vector3(P.flowers[0], 0, P.flowers[1]), radius: 3, label: 'みずを やる',
-    onInteract: async () => {
-      if (G.wateredDay === today()) return w.ui.say('おはなは きょう もう げんきいっぱいだ。');
-      G.wateredDay = today();
-      w.save.write();
-      w.audio.sfx('splash');
-      setBloom();
-      w.pika.emote('♥');
-      w.friendship(1);
-      if (Math.random() < 0.5) await w.getItem('hana', 'おはな');
-      else await w.ui.say('おはなが いきいきと さいた！');
-    },
+    pos: new THREE.Vector3(P.flowers[0], 0, P.flowers[1]), name: 'かだん', reach: 1.1,
+    tasks: [
+      {
+        verbs: ['water'],
+        run: async (pika) => {
+          if (G.wateredDay === today()) {
+            pika.confused();
+            return w.ui.toast('おはなは きょう もう げんきいっぱいだ');
+          }
+          await pika.busy({ sfx: 'splash', mark: '💧', color: '#3d9be0', n: 3 });
+          G.wateredDay = today();
+          w.save.write();
+          setBloom();
+          pika.emote('♥');
+          w.friendship(1);
+          if (Math.random() < 0.5) await w.getItem('hana', 'おはな');
+          else w.ui.toast('おはなが いきいきと さいた！');
+        },
+      },
+    ],
   });
 
   // いけ
   w.addInteractable({
-    pos: new THREE.Vector3(P.pond[0], 0, P.pond[1]), radius: 2.2, label: 'いけを のぞく',
-    onInteract: async () => {
-      w.pika.goTo(P.pond[0] + 0.5, P.pond[1] - 1).then(() => w.pika.emote('？', '#4a7bd0'));
-      const r = Math.random();
-      if (r < 0.3) {
-        w.audio.sfx('splash');
-        await w.ui.say('バシャッ！ コイキングが はねた！ ピカチュウが びっくりしている。');
-      } else if (r < 0.5) {
-        await w.getItem('kireinaishi', 'きれいないし');
-      } else await w.ui.say('すいめんに ピカチュウの かおが うつっている。');
-    },
+    pos: new THREE.Vector3(P.pond[0], 0, P.pond[1]), name: 'いけ', reach: 0.3,
+    tasks: [
+      {
+        verbs: ['look'],
+        label: 'のぞいて',
+        run: async (pika) => {
+          await pika.busy({ sfx: null, mark: '？', color: '#4a7bd0', n: 2, gap: 500 });
+          const r = Math.random();
+          if (r < 0.3) {
+            w.audio.sfx('splash');
+            pika.jump(0.7);
+            await w.ui.say('バシャッ！ コイキングが はねた！ ピカチュウが びっくりしている。');
+          } else if (r < 0.5) {
+            pika.emote('！', '#ff8c1a');
+            await w.getItem('kireinaishi', 'きれいないし');
+          } else w.ui.toast('すいめんに ピカチュウの かおが うつっている');
+        },
+      },
+    ],
   });
 
   let tick = 0;

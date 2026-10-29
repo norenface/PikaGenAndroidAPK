@@ -1,7 +1,8 @@
 import { makeDecor, makeMon } from '../entities/models.js';
 import { rng } from '../core/rng.js';
 
-// モエギそうげん: くさむらに隠れたナゾノクサを探す。ピカチュウが時々ヒントをくれる。
+// モエギそうげん: くさむらに隠れたナゾノクサを、ピカチュウに「しらべて」とたのんで探してもらう。
+// ピカチュウは ひまなとき、においで ヒントをくれる。
 const HIDDEN = 6;
 
 export default function nazonokusa(w) {
@@ -17,10 +18,8 @@ export default function nazonokusa(w) {
     const t = { obj, mon: null, found: false };
     tufts.push(t);
     w.addInteractable({
-      obj, radius: 1.8,
-      enabled: () => !t.found,
-      label: 'くさむらを しらべる',
-      onInteract: () => search(t),
+      obj, name: 'くさむら', reach: 0.6,
+      tasks: [{ verbs: ['look', 'dig'], enabled: () => !t.found, run: (pika) => search(t, pika) }],
     });
   }
   tufts
@@ -32,12 +31,13 @@ export default function nazonokusa(w) {
   let found = 0;
   const friends = [];
 
-  async function search(t) {
-    w.audio.sfx('dig');
+  async function search(t, pika) {
     t.obj.rotation.z = 0.3;
-    setTimeout(() => (t.obj.rotation.z = 0), 200);
+    await pika.busy({ sfx: 'dig', mark: '…', color: '#3a8a3a', n: 3, gap: 300 });
+    t.obj.rotation.z = 0;
     if (!t.mon) {
       t.found = true;
+      pika.confused();
       return w.ui.toast('……なにも いない');
     }
     t.found = true;
@@ -46,7 +46,8 @@ export default function nazonokusa(w) {
     friends.push({ m, ph: Math.random() * 6 });
     w.audio.sfx('sparkle');
     w.fx('！', m.position.x, 1.3, m.position.z, '#3f9b4f');
-    w.pika.emote('♪', '#3a8a3a');
+    pika.jump(0.6);
+    pika.emote('♪', '#3a8a3a');
     if (found < HIDDEN) return w.ui.toast(`ナゾノクサを みつけた！（${found}/${HIDDEN}）`);
     w.audio.sfx('fanfare');
     await w.ui.say(['ナゾノクサたちが ぜんいん でてきた！', 'みんなで たのしそうに おどっている♪']);
@@ -66,7 +67,7 @@ export default function nazonokusa(w) {
       if (hintT <= 0) {
         hintT = 9;
         const left = tufts.filter((t) => t.mon && !t.found);
-        if (left.length && Math.random() < 0.4 + w.save.friendship / 200) {
+        if (left.length && !w.pika.working && Math.random() < 0.4 + w.save.friendship / 200) {
           const t = left[Math.floor(Math.random() * left.length)];
           w.pika.goTo(t.obj.position.x + 0.8, t.obj.position.z + 0.8, 4).then(() => {
             w.audio.pika('hint');

@@ -16,6 +16,7 @@ export class UI {
       <div class="pad">
         <button class="btn action hidden">しらべる</button>
       </div>
+      <div class="hints"><div class="htitle"></div><div class="hwords"></div></div>
       <div class="blind hidden"><div class="hint"></div></div>
       <div class="msg hidden"><div class="who"></div><div class="text"></div><div class="next">▼</div></div>
       <div class="modal hidden"><div class="panel"><div class="title"></div><div class="list"></div></div></div>
@@ -28,7 +29,7 @@ export class UI {
       joy: q('.joy'), sensor: q('.sensor'), sensorText: q('.sensor span'), action: q('.action'), blind: q('.blind'), hint: q('.blind .hint'),
       msg: q('.msg'), who: q('.msg .who'), text: q('.msg .text'),
       modal: q('.modal'), mtitle: q('.modal .title'), mlist: q('.modal .list'),
-      toast: q('.toast'), fade: q('.fade'),
+      toast: q('.toast'), fade: q('.fade'), hints: q('.hints'), htitle: q('.hints .htitle'), hwords: q('.hints .hwords'),
     };
     this.busy = 0;
     this.msgResolve = null;
@@ -68,6 +69,25 @@ export class UI {
     el.classList.toggle('off', st === 'off');
     this.el.sensorText.textContent = { listening: 'きいてるよ', busy: 'かんがえちゅう', off: 'マイク ✕' }[st];
   }
+  // ピカチュウに言えることばのヒント。タップすると、そのことばを言ったのと同じになる
+  setHints(title, words, onPick) {
+    const key = title + '|' + words.join(',');
+    this.onPick = onPick;
+    if (key === this.hintKey) return;
+    this.hintKey = key;
+    this.el.hints.classList.toggle('hidden', !words.length);
+    this.el.htitle.textContent = title ? `${title} ▶ ピカチュウに` : 'ピカチュウに';
+    this.el.hwords.innerHTML = '';
+    for (const w of words) {
+      const b = document.createElement('button');
+      b.className = 'hw';
+      b.textContent = `「${w}」`;
+      b.addEventListener('pointerdown', (e) => e.stopPropagation());
+      b.addEventListener('click', () => this.onPick?.(w));
+      this.el.hwords.appendChild(b);
+    }
+  }
+
   setBlind(on, hint = '') {
     this.el.blind.classList.toggle('hidden', !on);
     this.el.hint.textContent = hint;

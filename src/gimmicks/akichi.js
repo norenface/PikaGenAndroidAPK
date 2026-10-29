@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { part } from '../entities/models.js';
 
-// うらのあきち: 裏技で来られる小さな空間。ふしぎなはこ と ピカチュウのダンス。
+// うらのあきち: 裏技で来られる小さな空間。ふしぎなはこを「あけて」、ステージで「おどって」とピカチュウにたのむ。
 export default function akichi(w, map) {
   const P = map.points;
   const box = w.add(new THREE.Group(), ...P.box);
@@ -12,28 +12,42 @@ export default function akichi(w, map) {
   const stage = w.add(part(new THREE.CylinderGeometry(1.4, 1.5, 0.2, 16), '#ffcfe0', 0, 0.1, 0), ...P.stage);
 
   w.addInteractable({
-    obj: box, radius: 2, label: 'ふしぎなはこを あける',
-    onInteract: async () => {
-      if (w.save.data.items.mysteryStone) return w.ui.say('はこは からっぽだ。でも なんだか あたたかい……');
-      w.audio.sfx('sparkle');
-      await w.ui.say('はこの なかで なにかが ひかっている……！');
-      await w.getItem('mysteryStone', 'ふしぎないし');
-    },
+    obj: box, name: 'ふしぎなはこ', reach: 1.0,
+    tasks: [
+      {
+        verbs: ['open', 'look'],
+        label: 'あけて',
+        run: async (pika) => {
+          await pika.busy({ sfx: null, mark: '？', color: '#9b5de5', n: 2 });
+          if (w.save.data.items.mysteryStone) {
+            pika.confused();
+            return w.ui.toast('はこは からっぽだ。でも なんだか あたたかい……');
+          }
+          w.audio.sfx('sparkle');
+          pika.jump(0.6);
+          await w.ui.say('ピカチュウが はこを あけると、なかで なにかが ひかっている……！');
+          await w.getItem('mysteryStone', 'ふしぎないし');
+        },
+      },
+    ],
   });
 
   let dancing = 0;
   w.addInteractable({
-    obj: stage, radius: 2.2, label: 'ピカチュウと おどる',
-    onInteract: async () => {
-      w.audio.playBgm('secret');
-      await w.pika.goTo(P.stage[0], P.stage[1], 5);
-      dancing = 6;
-      w.lockMove = true;
-      await new Promise((r) => setTimeout(r, 6000));
-      w.lockMove = false;
-      w.friendship(2);
-      await w.ui.say('ピカチュウは たのしそうに おどった！');
-    },
+    obj: stage, name: 'ステージ', reach: 0.05,
+    tasks: [
+      {
+        verbs: ['dance'],
+        run: async (pika) => {
+          w.audio.playBgm('secret');
+          pika.faceAt = null;
+          dancing = 6;
+          await new Promise((r) => setTimeout(r, 6000));
+          w.friendship(2);
+          w.ui.toast('ピカチュウは たのしそうに おどった！');
+        },
+      },
+    ],
   });
 
   let beat = 0;

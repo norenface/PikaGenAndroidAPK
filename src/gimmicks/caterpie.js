@@ -2,7 +2,7 @@ import { makeMon } from '../entities/models.js';
 
 // トキワのもり: キャタピーの子守り
 // バタフリーに頼まれ、制限時間のあいだキャタピーたちを巣の近くに留めておく。
-// 巣から離れすぎた子は「つれもどす」。遠くに行きすぎて時間切れになると失敗。
+// 巣から離れすぎた子は、ピカチュウに「つれてきて」とたのんで連れ戻してもらう。遠くに行きすぎたまま時間がたつと失敗。
 const TIME = 60;
 const SAFE_R = 6;
 const LOST_R = 11;
@@ -16,27 +16,33 @@ export default function caterpie(w, map) {
   for (let i = 0; i < 3; i++) {
     const obj = w.add(makeMon('caterpie'), nx - 2 + i * 2, nz + 1);
     obj.scale.setScalar(1.2);
-    const kid = { obj, dir: Math.random() * Math.PI * 2, turnT: 0, farT: 0 };
-    kid.it = w.addInteractable({
-      obj, radius: 2, label: 'つれもどす',
-      enabled: () => state === 'play' && dist(kid) > SAFE_R,
-      onInteract: async () => {
-        w.audio.sfx('ok');
-        obj.position.set(nx + (Math.random() - 0.5) * 2, 0, nz + 1);
+    const kid = { obj, dir: Math.random() * Math.PI * 2, turnT: 0, farT: 0, escort: false };
+    kid.task = {
+      verbs: ['bring'],
+      label: 'つれもどして',
+      enabled: () => state === 'play' && dist(kid) > SAFE_R && !kid.escort,
+      // ピカチュウがそばまで行き、巣まで先導する（キャタピーは後ろをついてくる）
+      run: async (pika) => {
+        w.audio.pika('call');
+        kid.escort = true;
+        await pika.goTo(nx + (Math.random() - 0.5) * 1.5, nz + 1.2, 2.6);
+        kid.escort = false;
         kid.farT = 0;
-        w.fx('♪', nx, 1, nz + 1, '#3a8a3a');
+        kid.dir = Math.random() * Math.PI * 2;
+        w.audio.sfx('ok');
+        w.fx('♪', obj.position.x, 1, obj.position.z, '#3a8a3a');
       },
-    });
+    };
+    w.addInteractable({ obj, name: 'キャタピー', reach: 0.7, tasks: [kid.task] });
     kids.push(kid);
   }
   const dist = (k) => Math.hypot(k.obj.position.x - nx, k.obj.position.z - nz);
 
   let state = 'idle'; // idle → play → idle
   let timeLeft = 0;
-  let helpT = 0;
 
   w.addInteractable({
-    obj: mother, radius: 2.6,
+    obj: mother, radius: 2.6, name: 'バタフリー',
     get label() {
       return state === 'play' ? 'バタフリーと はなす' : 'こもりを ひきうける';
     },
@@ -44,7 +50,7 @@ export default function caterpie(w, map) {
       if (state === 'play') return w.ui.say('「みんな だいじょうぶ？ あと すこし おねがいね」', 'バタフリー');
       const ok = await w.ui.choose('バタフリー「すこしの あいだ、こどもたちを みていて くれない？」', [{ label: 'まかせて！', value: true }]);
       if (!ok) return;
-      await w.ui.say(['キャタピーたちが はなれすぎないように みていてね。', 'すから とおくへ いったこは「つれもどす」で もどしてあげて！'], 'バタフリー');
+      await w.ui.say(['キャタピーたちが はなれすぎないように みていてね。', 'とおくへ いったこが いたら、そのこを みて ピカチュウに「つれもどして」と たのんでね！'], 'バタフリー');
       state = 'play';
       timeLeft = TIME;
       mother.visible = false;
@@ -77,6 +83,21 @@ export default function caterpie(w, map) {
         const o = k.obj;
         o.userData.rig.position.y = Math.abs(Math.sin(w.t * 6 + k.dir)) * 0.06;
         if (state !== 'play') continue;
+        if (k.escort) {
+          // ピカチュウの後ろをついていく
+          const p = w.pika.pos;
+          const dx = p.x - o.position.x;
+          const dz = p.z - o.position.z;
+          const d = Math.hypot(dx, dz);
+          if (d > 0.7) {
+            o.position.x += (dx / d) * Math.min(d - 0.7, 3 * dt);
+            o.position.z += (dz / d) * Math.min(d - 0.7, 3 * dt);
+            o.rotation.y = Math.atan2(dx, dz);
+          }
+          continue;
+        }
+        // ピカチュウが迎えに行っている子は待っている
+        if (w.pika.working === k.task) continue;
         k.turnT -= dt;
         if (k.turnT <= 0) {
           k.turnT = 1 + Math.random() * 2;
@@ -92,26 +113,12 @@ export default function caterpie(w, map) {
           k.farT += dt;
           if (Math.random() < dt) w.fx('！', o.position.x, 1, o.position.z, '#e8432f');
         } else k.farT = 0;
-        if (d > LOST_R && k.farT > 6) {
+        if (d > LOST_R && k.farT > 12) {
           finish(false);
           return;
         }
       }
       if (state !== 'play') return;
-      // なかよしなピカチュウは迷子を連れ戻してくれる
-      helpT -= dt;
-      if (helpT <= 0 && w.save.friendship >= 40) {
-        helpT = 7;
-        const far = kids.filter((k) => dist(k) > SAFE_R).sort((a, b) => dist(b) - dist(a))[0];
-        if (far) {
-          w.pika.goTo(far.obj.position.x, far.obj.position.z, 6).then(() => {
-            if (state !== 'play') return;
-            w.audio.pika('call');
-            far.dir = Math.atan2(nx - far.obj.position.x, nz - far.obj.position.z);
-            far.turnT = 3;
-          });
-        }
-      }
       timeLeft -= dt;
       w.ui.setTimer(`こもり のこり ${Math.ceil(timeLeft)}びょう`);
       if (timeLeft <= 0) finish(true);

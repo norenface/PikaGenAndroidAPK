@@ -3,6 +3,7 @@ import './style.css';
 import { Save } from './core/save.js';
 import { Audio } from './core/audio.js';
 import { VoiceListener } from './core/voice.js';
+import { understands } from './core/commands.js';
 import { UI } from './core/ui.js';
 import { Input } from './core/input.js';
 import { World } from './core/world.js';
@@ -35,16 +36,7 @@ ui.el.action.addEventListener('click', () => world.doAction());
 // 声: 常時聞き取り（ボタン操作なし）。
 // 聞き取れたらピカチュウが考える → 反応する。その間は聞き取りを止め、センサーが灰色になる。
 const voice = new VoiceListener({
-  onPhrase: async (text) => {
-    if (!world.pika.understands(text)) return;
-    voice.hold();
-    ui.toast(`「${text}」`);
-    try {
-      await world.pika.think(text);
-    } finally {
-      voice.release();
-    }
-  },
+  onPhrase: (text) => talk(text),
   onSensor: (s) => ui.setSensor(s),
   onInfo: ({ message, detail }) => {
     if (message === 'engine') ui.toast(detail === 'device' ? 'こえエンジン：たんまつ（こうせいど）' : 'こえエンジン：Vosk', 3000);
@@ -54,6 +46,22 @@ const voice = new VoiceListener({
     ui.toast(kind === 'denied' ? 'マイクが つかえません（アプリの せっていで マイクを きょかしてね）' : 'こえを きく じゅんびに しっぱいしました', 4000),
 });
 ui.setSensor(voice.supported ? 'busy' : 'off');
+
+// ピカチュウへのことば（声・ヒントのタップ共通）。ピカチュウが考えて反応するまで聞き取りを止める
+let talking = false;
+async function talk(text) {
+  if (talking || !understands(text)) return;
+  talking = true;
+  voice.hold();
+  ui.toast(`「${text}」`);
+  try {
+    await world.command(text);
+  } finally {
+    talking = false;
+    voice.release();
+  }
+}
+world.onSay = talk;
 
 ui.el.menu.addEventListener('click', async () => {
   if (ui.blocking) return;
